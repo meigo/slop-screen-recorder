@@ -19,29 +19,18 @@ Wraps FFmpeg with a clean native UI — select a source, hit record, get an MP4.
 
 - [Node.js](https://nodejs.org/) 18+
 - [Rust](https://rustup.rs/) 1.88+
-- [FFmpeg](https://ffmpeg.org/)
 
-### Installing FFmpeg
+**Release builds bundle FFmpeg** — no separate install needed. For development, you'll need FFmpeg on your PATH:
 
-**macOS:**
+<details>
+<summary>Installing FFmpeg for development</summary>
 
-```sh
-brew install ffmpeg
-```
+**macOS:** `brew install ffmpeg`
 
-**Windows:**
+**Windows:** `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
 
-Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH. Or via [Chocolatey](https://chocolatey.org/):
-
-```sh
-choco install ffmpeg
-```
-
-**Linux (Debian/Ubuntu):**
-
-```sh
-sudo apt install ffmpeg
-```
+**Linux:** `sudo apt install ffmpeg`
+</details>
 
 ## Getting Started
 

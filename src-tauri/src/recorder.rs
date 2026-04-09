@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::State;
@@ -11,6 +12,7 @@ use std::os::windows::ffi::OsStringExt;
 pub struct RecorderState {
     pub process: Mutex<Option<Child>>,
     pub output_path: Mutex<Option<String>>,
+    pub ffmpeg_path: Mutex<Option<PathBuf>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -29,30 +31,58 @@ pub struct RecordingConfig {
     pub audio_device: Option<String>,
 }
 
-#[cfg(target_os = "macos")]
-fn find_ffmpeg() -> String {
-    // Check common homebrew paths, then fall back to PATH
-    for path in &["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
-        if std::path::Path::new(path).exists() {
-            return path.to_string();
+/// Resolve the ffmpeg binary path. Checks the cached path first, then
+/// tries the bundled sidecar (next to the app executable), then falls
+/// back to the system PATH.
+fn find_ffmpeg(state: &State<RecorderState>) -> PathBuf {
+    // Return cached path if we have one
+    if let Ok(guard) = state.ffmpeg_path.lock() {
+        if let Some(ref path) = *guard {
+            return path.clone();
         }
     }
-    "ffmpeg".to_string()
+
+    let resolved = resolve_ffmpeg_path();
+
+    // Cache it
+    if let Ok(mut guard) = state.ffmpeg_path.lock() {
+        *guard = Some(resolved.clone());
+    }
+
+    resolved
 }
 
-#[cfg(target_os = "windows")]
-fn find_ffmpeg() -> String {
-    "ffmpeg".to_string()
-}
+fn resolve_ffmpeg_path() -> PathBuf {
+    // Try bundled sidecar: next to the current executable
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            #[cfg(target_os = "windows")]
+            let sidecar = exe_dir.join("ffmpeg.exe");
+            #[cfg(not(target_os = "windows"))]
+            let sidecar = exe_dir.join("ffmpeg");
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn find_ffmpeg() -> String {
-    "ffmpeg".to_string()
+            if sidecar.exists() && sidecar.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+                log::info!("Using bundled ffmpeg: {}", sidecar.display());
+                return sidecar;
+            }
+        }
+    }
+
+    // Fall back to system PATH
+    #[cfg(target_os = "macos")]
+    for path in &["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"] {
+        if std::path::Path::new(path).exists() {
+            return PathBuf::from(path);
+        }
+    }
+
+    log::info!("Using system ffmpeg from PATH");
+    PathBuf::from("ffmpeg")
 }
 
 #[tauri::command]
-pub fn check_ffmpeg() -> Result<bool, String> {
-    let ffmpeg = find_ffmpeg();
+pub fn check_ffmpeg(state: State<RecorderState>) -> Result<bool, String> {
+    let ffmpeg = find_ffmpeg(&state);
     match Command::new(&ffmpeg).arg("-version").output() {
         Ok(output) => Ok(output.status.success()),
         Err(_) => Ok(false),
@@ -60,10 +90,11 @@ pub fn check_ffmpeg() -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn list_sources() -> Result<Vec<RecordingSource>, String> {
+#[allow(unused_variables)]
+pub fn list_sources(state: State<RecorderState>) -> Result<Vec<RecordingSource>, String> {
     #[cfg(target_os = "macos")]
     {
-        let ffmpeg = find_ffmpeg();
+        let ffmpeg = find_ffmpeg(&state);
         let output = Command::new(&ffmpeg)
             .args(["-f", "avfoundation", "-list_devices", "true", "-i", ""])
             .output()
@@ -131,8 +162,8 @@ pub fn list_sources() -> Result<Vec<RecordingSource>, String> {
 }
 
 #[tauri::command]
-pub fn list_audio_devices() -> Result<Vec<RecordingSource>, String> {
-    let ffmpeg = find_ffmpeg();
+pub fn list_audio_devices(state: State<RecorderState>) -> Result<Vec<RecordingSource>, String> {
+    let ffmpeg = find_ffmpeg(&state);
 
     #[cfg(target_os = "macos")]
     {
@@ -322,7 +353,7 @@ pub fn start_recording(
         return Err("Already recording".to_string());
     }
 
-    let ffmpeg = find_ffmpeg();
+    let ffmpeg = find_ffmpeg(&state);
     let output_path = generate_output_path(&config.output_dir);
 
     let mut args: Vec<String> = Vec::new();

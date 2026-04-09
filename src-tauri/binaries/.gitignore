@@ -1,0 +1,3 @@
+# Sidecar binaries are downloaded during CI build.
+# Dummy placeholder files are created by the setup script for local dev.
+ffmpeg-*

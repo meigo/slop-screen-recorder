@@ -16,10 +16,19 @@ jobs:
         include:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
+            ffmpeg_url: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+            ffmpeg_bin: ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe
+            sidecar_name: ffmpeg-x86_64-pc-windows-msvc.exe
           - platform: macos-latest
             target: aarch64-apple-darwin
+            ffmpeg_url: https://evermeet.cx/ffmpeg/getrelease/zip
+            ffmpeg_bin: ffmpeg
+            sidecar_name: ffmpeg-aarch64-apple-darwin
           - platform: macos-latest
             target: x86_64-apple-darwin
+            ffmpeg_url: https://evermeet.cx/ffmpeg/getrelease/zip
+            ffmpeg_bin: ffmpeg
+            sidecar_name: ffmpeg-x86_64-apple-darwin
 
     runs-on: ${{ matrix.platform }}
 
@@ -40,13 +49,31 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Install FFmpeg (Windows)
+      - name: Download FFmpeg for bundling (Windows)
         if: matrix.platform == 'windows-latest'
-        run: choco install ffmpeg -y
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "${{ matrix.ffmpeg_url }}" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-dl
+          Copy-Item "ffmpeg-dl/${{ matrix.ffmpeg_bin }}" "src-tauri/binaries/${{ matrix.sidecar_name }}"
 
-      - name: Install FFmpeg (macOS)
+      - name: Download FFmpeg for bundling (macOS)
         if: contains(matrix.platform, 'macos')
-        run: brew install ffmpeg
+        run: |
+          curl -L "${{ matrix.ffmpeg_url }}" -o ffmpeg.zip
+          unzip ffmpeg.zip
+          cp "${{ matrix.ffmpeg_bin }}" "src-tauri/binaries/${{ matrix.sidecar_name }}"
+          chmod +x "src-tauri/binaries/${{ matrix.sidecar_name }}"
+
+      - name: Create dummy sidecars for other targets
+        shell: bash
+        run: |
+          cd src-tauri/binaries
+          # Create empty placeholders for targets we're not building
+          # Tauri needs all declared sidecar variants to exist
+          for f in ffmpeg-x86_64-pc-windows-msvc.exe ffmpeg-aarch64-apple-darwin ffmpeg-x86_64-apple-darwin ffmpeg-x86_64-unknown-linux-gnu; do
+            [ -f "$f" ] || touch "$f"
+          done
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
