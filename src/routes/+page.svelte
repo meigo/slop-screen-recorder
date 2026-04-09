@@ -19,6 +19,7 @@
 		audio_device: string | null;
 	}
 
+	let loading = $state(true);
 	let ffmpegAvailable = $state(false);
 	let sources = $state<Source[]>([]);
 	let audioDevices = $state<Source[]>([]);
@@ -35,6 +36,7 @@
 
 	onMount(async () => {
 		ffmpegAvailable = await invoke<boolean>('check_ffmpeg');
+		loading = false;
 		if (!ffmpegAvailable) return;
 
 		const [srcs, audio, defaultDir] = await Promise.all([
@@ -135,11 +137,12 @@
 <main>
 	<h1>Slop Screen Recorder</h1>
 
-	{#if !ffmpegAvailable}
+	{#if loading}
+		<!-- wait for init -->
+	{:else if !ffmpegAvailable}
 		<div class="error">
-			<p>FFmpeg not found. Please install FFmpeg to use this app.</p>
-			<p class="hint">macOS: <code>brew install ffmpeg</code></p>
-			<p class="hint">Windows: Download from ffmpeg.org and add to PATH</p>
+			<p>FFmpeg not found.</p>
+			<p class="hint">Install FFmpeg and make sure it's available in your PATH.</p>
 		</div>
 	{:else}
 		<div class="controls">

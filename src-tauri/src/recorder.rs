@@ -8,6 +8,11 @@ use tauri::State;
 use std::ffi::OsString;
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStringExt;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub struct RecorderState {
     pub process: Mutex<Option<Child>>,
@@ -29,6 +34,14 @@ pub struct RecordingConfig {
     pub fps: u32,
     pub capture_audio: bool,
     pub audio_device: Option<String>,
+}
+
+/// Create a Command that won't spawn a visible console window on Windows.
+fn ffmpeg_command(path: &PathBuf) -> Command {
+    let mut cmd = Command::new(path);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
 }
 
 /// Resolve the ffmpeg binary path. Checks the cached path first, then
@@ -76,6 +89,24 @@ fn resolve_ffmpeg_path() -> PathBuf {
         }
     }
 
+    // On Windows, resolve the full path via `where` to avoid picking up
+    // a 0-byte sidecar placeholder from the working directory.
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(output) = Command::new("where").arg("ffmpeg").creation_flags(CREATE_NO_WINDOW).output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    let path = std::path::Path::new(line.trim());
+                    if path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+                        log::info!("Using system ffmpeg: {}", path.display());
+                        return PathBuf::from(path);
+                    }
+                }
+            }
+        }
+    }
+
     log::info!("Using system ffmpeg from PATH");
     PathBuf::from("ffmpeg")
 }
@@ -83,9 +114,16 @@ fn resolve_ffmpeg_path() -> PathBuf {
 #[tauri::command]
 pub fn check_ffmpeg(state: State<RecorderState>) -> Result<bool, String> {
     let ffmpeg = find_ffmpeg(&state);
-    match Command::new(&ffmpeg).arg("-version").output() {
-        Ok(output) => Ok(output.status.success()),
-        Err(_) => Ok(false),
+    log::info!("check_ffmpeg: trying {:?}", ffmpeg);
+    match ffmpeg_command(&ffmpeg).arg("-version").output() {
+        Ok(output) => {
+            log::info!("check_ffmpeg: status={}", output.status.success());
+            Ok(output.status.success())
+        }
+        Err(e) => {
+            log::error!("check_ffmpeg: error: {}", e);
+            Ok(false)
+        }
     }
 }
 
@@ -95,7 +133,7 @@ pub fn list_sources(state: State<RecorderState>) -> Result<Vec<RecordingSource>,
     #[cfg(target_os = "macos")]
     {
         let ffmpeg = find_ffmpeg(&state);
-        let output = Command::new(&ffmpeg)
+        let output = ffmpeg_command(&ffmpeg)
             .args(["-f", "avfoundation", "-list_devices", "true", "-i", ""])
             .output()
             .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
@@ -167,7 +205,7 @@ pub fn list_audio_devices(state: State<RecorderState>) -> Result<Vec<RecordingSo
 
     #[cfg(target_os = "macos")]
     {
-        let output = Command::new(&ffmpeg)
+        let output = ffmpeg_command(&ffmpeg)
             .args(["-f", "avfoundation", "-list_devices", "true", "-i", ""])
             .output()
             .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
@@ -203,7 +241,7 @@ pub fn list_audio_devices(state: State<RecorderState>) -> Result<Vec<RecordingSo
     #[cfg(target_os = "windows")]
     {
         // On Windows, list dshow audio devices
-        let output = Command::new(&ffmpeg)
+        let output = ffmpeg_command(&ffmpeg)
             .args(["-f", "dshow", "-list_devices", "true", "-i", "dummy"])
             .output()
             .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
@@ -467,7 +505,7 @@ pub fn start_recording(
 
     log::info!("Starting ffmpeg with args: {:?}", args);
 
-    let child = Command::new(&ffmpeg)
+    let child = ffmpeg_command(&ffmpeg)
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
