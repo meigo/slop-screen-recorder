@@ -3,6 +3,11 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::State;
 
+#[cfg(target_os = "windows")]
+use std::ffi::OsString;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStringExt;
+
 pub struct RecorderState {
     pub process: Mutex<Option<Child>>,
     pub output_path: Mutex<Option<String>>,
@@ -56,10 +61,9 @@ pub fn check_ffmpeg() -> Result<bool, String> {
 
 #[tauri::command]
 pub fn list_sources() -> Result<Vec<RecordingSource>, String> {
-    let ffmpeg = find_ffmpeg();
-
     #[cfg(target_os = "macos")]
     {
+        let ffmpeg = find_ffmpeg();
         let output = Command::new(&ffmpeg)
             .args(["-f", "avfoundation", "-list_devices", "true", "-i", ""])
             .output()
@@ -105,12 +109,15 @@ pub fn list_sources() -> Result<Vec<RecordingSource>, String> {
 
     #[cfg(target_os = "windows")]
     {
-        // On Windows with gdigrab, the main desktop is always available
-        Ok(vec![RecordingSource {
+        let mut sources = vec![RecordingSource {
             id: "desktop".to_string(),
-            name: "Desktop".to_string(),
+            name: "Desktop (Full Screen)".to_string(),
             source_type: "screen".to_string(),
-        }])
+        }];
+
+        sources.extend(list_windows());
+
+        Ok(sources)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -207,6 +214,95 @@ pub fn list_audio_devices() -> Result<Vec<RecordingSource>, String> {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn list_windows() -> Vec<RecordingSource> {
+    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowTextLengthW, GetWindowTextW, IsIconic, IsWindowVisible,
+    };
+
+    unsafe extern "system" fn enum_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let windows = &mut *(lparam as *mut Vec<RecordingSource>);
+
+        if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+            return 1; // skip hidden and minimized windows
+        }
+
+        let len = GetWindowTextLengthW(hwnd);
+        if len == 0 {
+            return 1;
+        }
+
+        let mut buf = vec![0u16; (len + 1) as usize];
+        let copied = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
+        if copied > 0 {
+            let title = OsString::from_wide(&buf[..copied as usize])
+                .to_string_lossy()
+                .to_string();
+
+            // Skip empty titles and known system windows
+            if !title.is_empty()
+                && title != "Program Manager"
+                && title != "Windows Input Experience"
+                && title != "MSCTFIME UI"
+                && title != "Default IME"
+            {
+                windows.push(RecordingSource {
+                    id: format!("hwnd:{}", hwnd as isize),
+                    name: title,
+                    source_type: "window".to_string(),
+                });
+            }
+        }
+
+        1 // continue enumeration
+    }
+
+    let mut windows: Vec<RecordingSource> = Vec::new();
+    unsafe {
+        EnumWindows(Some(enum_callback), &mut windows as *mut Vec<RecordingSource> as LPARAM);
+    }
+
+    // Deduplicate by title (keep first occurrence)
+    let mut seen = std::collections::HashSet::new();
+    windows.retain(|w| seen.insert(w.name.clone()));
+
+    windows
+}
+
+/// Look up a window's screen rect by HWND for region-based capture.
+#[cfg(target_os = "windows")]
+fn get_window_rect_by_hwnd(hwnd_val: isize) -> Result<(i32, i32, i32, i32), String> {
+    use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+    use windows_sys::Win32::Foundation::RECT;
+
+    let hwnd = hwnd_val as windows_sys::Win32::Foundation::HWND;
+    let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    let hr = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
+            &mut rect as *mut RECT as *mut _,
+            std::mem::size_of::<RECT>() as u32,
+        )
+    };
+
+    if hr != 0 {
+        return Err(format!("DwmGetWindowAttribute failed: 0x{:08x}", hr));
+    }
+
+    let x = rect.left;
+    let y = rect.top;
+    let w = rect.right - rect.left;
+    let h = rect.bottom - rect.top;
+
+    if w <= 0 || h <= 0 {
+        return Err("Window has zero size".to_string());
+    }
+
+    Ok((x, y, w, h))
+}
+
 fn generate_output_path(output_dir: &str) -> String {
     let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
     let filename = format!("recording_{}.mp4", timestamp);
@@ -270,8 +366,29 @@ pub fn start_recording(
         args.extend_from_slice(&[
             "-f".into(), "gdigrab".into(),
             "-framerate".into(), config.fps.to_string(),
-            "-i".into(), config.source_id.clone(),
         ]);
+
+        // For window capture, get the window's screen rect and capture that region
+        let is_window_capture = config.source_id.starts_with("hwnd:");
+        if is_window_capture {
+            let hwnd: isize = config.source_id[5..]
+                .parse()
+                .map_err(|_| "Invalid window handle".to_string())?;
+            let (x, y, w, h) = get_window_rect_by_hwnd(hwnd)?;
+            // Round dimensions down to even numbers (h264 requirement)
+            let w = w & !1;
+            let h = h & !1;
+            args.extend_from_slice(&[
+                "-offset_x".into(), x.to_string(),
+                "-offset_y".into(), y.to_string(),
+                "-video_size".into(), format!("{}x{}", w, h),
+                "-i".into(), "desktop".into(),
+            ]);
+        } else {
+            args.extend_from_slice(&[
+                "-i".into(), "desktop".into(),
+            ]);
+        }
 
         if config.capture_audio {
             if let Some(ref audio_device) = config.audio_device {
@@ -282,7 +399,10 @@ pub fn start_recording(
             }
         }
 
+        // For window capture, use vf pad to ensure even dimensions;
+        // for full screen, use crop filter as fallback
         args.extend_from_slice(&[
+            "-vf".into(), "pad=ceil(iw/2)*2:ceil(ih/2)*2".into(),
             "-c:v".into(), "libx264".into(),
             "-preset".into(), "ultrafast".into(),
             "-pix_fmt".into(), "yuv420p".into(),

@@ -12,6 +12,7 @@ pub fn run() {
             process: Mutex::new(None),
             output_path: Mutex::new(None),
         })
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

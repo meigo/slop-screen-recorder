@@ -7,15 +7,18 @@ Wraps FFmpeg with a clean native UI — select a source, hit record, get an MP4.
 ## Features
 
 - **Cross-platform** — macOS, Windows, and Linux
+- **Window capture** — record a specific window or the full desktop (Windows enumerates visible windows via Win32 API)
 - **Hardware-accelerated encoding** — H.264 via VideoToolbox (macOS), with fallback to libx264
 - **Audio capture** — optional microphone recording
-- **Configurable** — choose source, FPS (15/24/30/60), and output directory
+- **Configurable** — choose source, FPS (15/24/25/30/60), and output directory
+- **Global hotkey** — `Ctrl+Shift+R` to start/stop recording from anywhere
+- **Minimize on record** — optionally minimize the recorder window while recording
 - **Tiny footprint** — native Tauri app, no Electron/Chromium bundle
 
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) 1.77+
+- [Rust](https://rustup.rs/) 1.88+
 - [FFmpeg](https://ffmpeg.org/)
 
 ### Installing FFmpeg

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { onMount } from 'svelte';
+	import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
+	import { onMount, onDestroy } from 'svelte';
 
 	interface Source {
 		id: string;
@@ -25,6 +27,7 @@
 	let captureAudio = $state(false);
 	let outputDir = $state('');
 	let fps = $state(30);
+	let minimizeOnRecord = $state(false);
 	let recording = $state(false);
 	let outputPath = $state('');
 	let elapsed = $state(0);
@@ -49,6 +52,23 @@
 		if (screen) selectedSource = screen.id;
 
 		if (audioDevices.length > 0) selectedAudio = audioDevices[0].id;
+
+		await register('CommandOrControl+Shift+R', async (event) => {
+			if (event.state === 'Released') return;
+			if (recording) {
+				await stopRecording();
+			} else {
+				await startRecording();
+			}
+		});
+	});
+
+	onDestroy(async () => {
+		try {
+			await unregister('CommandOrControl+Shift+R');
+		} catch {
+			// ignore cleanup errors
+		}
 	});
 
 	function formatTime(seconds: number): string {
@@ -73,6 +93,9 @@
 			recording = true;
 			elapsed = 0;
 			timer = setInterval(() => elapsed++, 1000);
+			if (minimizeOnRecord) {
+				await getCurrentWindow().minimize();
+			}
 		} catch (e) {
 			alert(`Failed to start recording: ${e}`);
 		}
@@ -87,8 +110,19 @@
 				timer = null;
 			}
 			outputPath = path;
+			await getCurrentWindow().unminimize();
 		} catch (e) {
 			alert(`Failed to stop recording: ${e}`);
+		}
+	}
+
+	async function refreshSources() {
+		const srcs = await invoke<Source[]>('list_sources');
+		sources = srcs;
+		// If selected source no longer exists, fall back to first screen
+		if (!sources.find((s) => s.id === selectedSource)) {
+			const screen = sources.find((s) => s.source_type === 'screen');
+			selectedSource = screen ? screen.id : sources[0]?.id ?? '';
 		}
 	}
 
@@ -111,7 +145,7 @@
 		<div class="controls">
 			<div class="field">
 				<label for="source">Source</label>
-				<select id="source" bind:value={selectedSource} disabled={recording}>
+				<select id="source" bind:value={selectedSource} disabled={recording} onfocus={refreshSources}>
 					{#each sources as source (source.id)}
 						<option value={source.id}>{source.name}</option>
 					{/each}
@@ -123,6 +157,7 @@
 				<select id="fps" bind:value={fps} disabled={recording}>
 					<option value={15}>15</option>
 					<option value={24}>24</option>
+					<option value={25}>25</option>
 					<option value={30}>30</option>
 					<option value={60}>60</option>
 				</select>
@@ -132,6 +167,13 @@
 				<label>
 					<input type="checkbox" bind:checked={captureAudio} disabled={recording} />
 					Capture audio
+				</label>
+			</div>
+
+			<div class="field row">
+				<label>
+					<input type="checkbox" bind:checked={minimizeOnRecord} disabled={recording} />
+					Minimize on record
 				</label>
 			</div>
 
@@ -178,11 +220,9 @@
 <style>
 	:global(body) {
 		margin: 0;
-		font-family:
-			-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell,
-			sans-serif;
-		background: #1a1a2e;
-		color: #eee;
+		font-family: 'JetBrains Mono', monospace;
+		background: #1a1a1a;
+		color: #ffffff;
 	}
 
 	main {
@@ -193,15 +233,16 @@
 
 	h1 {
 		text-align: center;
-		font-size: 1.4rem;
-		font-weight: 600;
+		font-size: 1.3rem;
+		font-weight: 700;
 		margin-bottom: 2rem;
-		color: #fff;
+		color: #ffffff;
+		letter-spacing: -0.02em;
 	}
 
 	.error {
-		background: #2d1b1b;
-		border: 1px solid #5c2b2b;
+		background: #2a2020;
+		border: 1px solid #443030;
 		border-radius: 8px;
 		padding: 1.5rem;
 		text-align: center;
@@ -212,15 +253,16 @@
 	}
 
 	.hint {
-		font-size: 0.85rem;
-		color: #999;
+		font-size: 0.8rem;
+		color: #888;
 	}
 
 	code {
-		background: #2a2a3e;
+		background: #2a2a2a;
 		padding: 0.2rem 0.5rem;
 		border-radius: 4px;
-		font-size: 0.85rem;
+		font-size: 0.8rem;
+		font-family: 'JetBrains Mono', monospace;
 	}
 
 	.controls {
@@ -241,32 +283,37 @@
 	}
 
 	label {
-		font-size: 0.85rem;
-		color: #aaa;
+		font-size: 0.8rem;
+		color: #888;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
 	.field.row label {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		color: #eee;
+		color: #ccc;
+		text-transform: none;
+		letter-spacing: normal;
 		cursor: pointer;
 	}
 
 	select,
 	input[type='text'] {
-		background: #2a2a3e;
-		border: 1px solid #3a3a5e;
+		background: #2a2a2a;
+		border: 1px solid #3a3a3a;
 		border-radius: 6px;
 		padding: 0.5rem 0.75rem;
-		color: #eee;
-		font-size: 0.9rem;
+		color: #ffffff;
+		font-size: 0.85rem;
+		font-family: 'JetBrains Mono', monospace;
 	}
 
 	select:focus,
 	input:focus {
 		outline: none;
-		border-color: #6366f1;
+		border-color: #666;
 	}
 
 	.dir-picker {
@@ -279,17 +326,18 @@
 	}
 
 	.dir-picker button {
-		background: #2a2a3e;
-		border: 1px solid #3a3a5e;
+		background: #2a2a2a;
+		border: 1px solid #3a3a3a;
 		border-radius: 6px;
 		padding: 0.5rem 1rem;
-		color: #eee;
+		color: #ffffff;
 		cursor: pointer;
-		font-size: 0.85rem;
+		font-size: 0.8rem;
+		font-family: 'JetBrains Mono', monospace;
 	}
 
 	.dir-picker button:hover {
-		background: #3a3a5e;
+		background: #333;
 	}
 
 	.record-section {
@@ -309,12 +357,13 @@
 
 	.btn {
 		border: none;
-		border-radius: 12px;
+		border-radius: 8px;
 		padding: 0.85rem 2.5rem;
-		font-size: 1rem;
+		font-size: 0.9rem;
 		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.15s;
+		font-family: 'JetBrains Mono', monospace;
 	}
 
 	.btn:disabled {
@@ -333,18 +382,18 @@
 	}
 
 	.btn.stop {
-		background: #3a3a5e;
+		background: #333;
 		color: white;
 	}
 
 	.btn.stop:hover {
-		background: #4a4a6e;
+		background: #444;
 	}
 
 	.output-info {
 		margin-top: 1.5rem;
-		background: #1e3a2e;
-		border: 1px solid #2d5a3e;
+		background: #1e2e1e;
+		border: 1px solid #2a3e2a;
 		border-radius: 8px;
 		padding: 1rem;
 		text-align: center;
@@ -352,8 +401,8 @@
 
 	.output-info p {
 		margin: 0 0 0.5rem 0;
-		font-size: 0.85rem;
-		color: #aaa;
+		font-size: 0.8rem;
+		color: #888;
 	}
 
 	.output-info code {
@@ -361,6 +410,6 @@
 	}
 
 	input[type='checkbox'] {
-		accent-color: #6366f1;
+		accent-color: #ef4444;
 	}
 </style>
