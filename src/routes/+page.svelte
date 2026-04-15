@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import { getCurrentWindow } from '@tauri-apps/api/window';
+	import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window';
 	import { open } from '@tauri-apps/plugin-dialog';
+	import { open as openInShell } from '@tauri-apps/plugin-shell';
 	import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 	import { onMount, onDestroy } from 'svelte';
 
@@ -11,13 +12,41 @@
 		source_type: string;
 	}
 
+	type Region = {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+	};
+
 	interface RecordingConfig {
 		source_id: string;
 		output_dir: string;
 		fps: number;
 		capture_audio: boolean;
 		audio_device: string | null;
+		region: Region | null;
 	}
+
+	const REGION_PRESETS: Record<string, { w: number; h: number }> = {
+		// Landscape (16:9)
+		'854x480': { w: 854, h: 480 },
+		'1280x720': { w: 1280, h: 720 },
+		'1920x1080': { w: 1920, h: 1080 },
+		'2560x1440': { w: 2560, h: 1440 },
+		'3840x2160': { w: 3840, h: 2160 },
+		// Portrait (9:16)
+		'480x854': { w: 480, h: 854 },
+		'720x1280': { w: 720, h: 1280 },
+		'1080x1920': { w: 1080, h: 1920 },
+		'1440x2560': { w: 1440, h: 2560 },
+		'2160x3840': { w: 2160, h: 3840 },
+		// Square (1:1)
+		'720x720': { w: 720, h: 720 },
+		'1080x1080': { w: 1080, h: 1080 },
+		'1440x1440': { w: 1440, h: 1440 },
+	};
+
 
 	let loading = $state(true);
 	let ffmpegAvailable = $state(false);
@@ -33,6 +62,73 @@
 	let outputPath = $state('');
 	let elapsed = $state(0);
 	let timer: ReturnType<typeof setInterval> | null = null;
+	let useRegion = $state(false);
+	let regionPreset = $state('1920x1080');
+	let regionX = $state(0);
+	let regionY = $state(0);
+	let screenSize = $state<{ w: number; h: number } | null>(null);
+	let overlayVisible = $state(false);
+
+	const selectedSourceType = $derived(
+		sources.find((s) => s.id === selectedSource)?.source_type ?? 'screen',
+	);
+	const canUseRegion = $derived(selectedSourceType === 'screen' && screenSize !== null);
+
+	const previewRegion = $derived.by(() => {
+		if (!useRegion || !screenSize) return null;
+		return computeRegion();
+	});
+	// Fit a preview box inside a max 280×160 area while preserving aspect ratio.
+	const previewBox = $derived.by(() => {
+		if (!screenSize) return null;
+		const maxW = 280;
+		const maxH = 160;
+		const scale = Math.min(maxW / screenSize.w, maxH / screenSize.h);
+		return { w: screenSize.w * scale, h: screenSize.h * scale, scale };
+	});
+
+	function currentRegionSize(): { w: number; h: number } | null {
+		if (!screenSize) return null;
+		const preset = REGION_PRESETS[regionPreset];
+		if (!preset) return null;
+		return {
+			w: Math.min(preset.w, screenSize.w) & ~1,
+			h: Math.min(preset.h, screenSize.h) & ~1,
+		};
+	}
+
+	function clampPosition(x: number, y: number, w: number, h: number): { x: number; y: number } {
+		if (!screenSize) return { x: 0, y: 0 };
+		return {
+			x: Math.max(0, Math.min(screenSize.w - w, Math.round(x))),
+			y: Math.max(0, Math.min(screenSize.h - h, Math.round(y))),
+		};
+	}
+
+	function centerRegion() {
+		const size = currentRegionSize();
+		if (!size) return;
+		const pos = clampPosition((screenSize!.w - size.w) / 2, (screenSize!.h - size.h) / 2, size.w, size.h);
+		regionX = pos.x;
+		regionY = pos.y;
+	}
+
+	function computeRegion(): Region | null {
+		if (!useRegion || !canUseRegion) return null;
+		const size = currentRegionSize();
+		if (!size) return null;
+		const pos = clampPosition(regionX, regionY, size.w, size.h);
+		return { x: pos.x, y: pos.y, width: size.w, height: size.h };
+	}
+
+	// Re-clamp x/y whenever preset size or screen changes so the rect stays on-screen.
+	$effect(() => {
+		const size = currentRegionSize();
+		if (!size) return;
+		const pos = clampPosition(regionX, regionY, size.w, size.h);
+		if (pos.x !== regionX) regionX = pos.x;
+		if (pos.y !== regionY) regionY = pos.y;
+	});
 
 	onMount(async () => {
 		ffmpegAvailable = await invoke<boolean>('check_ffmpeg');
@@ -48,6 +144,12 @@
 		sources = srcs;
 		audioDevices = audio;
 		outputDir = defaultDir;
+
+		const monitor = await currentMonitor();
+		if (monitor) {
+			screenSize = { w: monitor.size.width, h: monitor.size.height };
+			centerRegion();
+		}
 
 		// Auto-select first screen source
 		const screen = sources.find((s) => s.source_type === 'screen');
@@ -88,11 +190,13 @@
 			fps,
 			capture_audio: captureAudio,
 			audio_device: captureAudio ? selectedAudio : null,
+			region: computeRegion(),
 		};
 
 		try {
 			outputPath = await invoke<string>('start_recording', { config });
 			recording = true;
+			overlayVisible = false; // backend closes it; sync local state
 			elapsed = 0;
 			timer = setInterval(() => elapsed++, 1000);
 			if (minimizeOnRecord) {
@@ -132,6 +236,78 @@
 		const selected = await open({ directory: true, multiple: false });
 		if (selected) outputDir = selected as string;
 	}
+
+	async function openVideo() {
+		try {
+			await openInShell(outputPath);
+		} catch (e) {
+			alert(`Failed to open video: ${e}`);
+		}
+	}
+
+	let dragStart: { mouseX: number; mouseY: number; regionX: number; regionY: number } | null = null;
+
+	function onRectPointerDown(e: PointerEvent) {
+		if (recording) return;
+		const target = e.currentTarget as SVGElement;
+		target.setPointerCapture(e.pointerId);
+		dragStart = { mouseX: e.clientX, mouseY: e.clientY, regionX, regionY };
+	}
+
+	function onRectPointerMove(e: PointerEvent) {
+		if (!dragStart || !previewBox) return;
+		const dxPreview = e.clientX - dragStart.mouseX;
+		const dyPreview = e.clientY - dragStart.mouseY;
+		const dxScreen = dxPreview / previewBox.scale;
+		const dyScreen = dyPreview / previewBox.scale;
+		const size = currentRegionSize();
+		if (!size) return;
+		const pos = clampPosition(dragStart.regionX + dxScreen, dragStart.regionY + dyScreen, size.w, size.h);
+		regionX = pos.x;
+		regionY = pos.y;
+	}
+
+	function onRectPointerUp(e: PointerEvent) {
+		const target = e.currentTarget as SVGElement;
+		if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId);
+		dragStart = null;
+	}
+
+	async function toggleOverlay() {
+		if (overlayVisible) {
+			await invoke('hide_region_overlay');
+			overlayVisible = false;
+			return;
+		}
+		const region = computeRegion();
+		if (!region) return;
+		await invoke('show_region_overlay', region);
+		overlayVisible = true;
+	}
+
+	// Keep overlay in sync with region preset/position changes while it's visible.
+	$effect(() => {
+		if (!overlayVisible) return;
+		if (!previewRegion) return;
+		invoke('show_region_overlay', previewRegion).catch(() => {});
+	});
+
+	// Close overlay if source changes away from a screen source.
+	$effect(() => {
+		if (!canUseRegion && overlayVisible) {
+			invoke('hide_region_overlay').catch(() => {});
+			overlayVisible = false;
+		}
+	});
+
+	async function showInFolder() {
+		const parent = outputPath.replace(/[/\\][^/\\]*$/, '');
+		try {
+			await openInShell(parent);
+		} catch (e) {
+			alert(`Failed to open folder: ${e}`);
+		}
+	}
 </script>
 
 <main>
@@ -154,6 +330,84 @@
 					{/each}
 				</select>
 			</div>
+
+			{#if canUseRegion}
+				<div class="field row">
+					<label>
+						<input type="checkbox" bind:checked={useRegion} disabled={recording} />
+						Record region only
+					</label>
+				</div>
+
+				{#if useRegion}
+					<div class="field">
+						<label for="region-size">Region size</label>
+						<select id="region-size" bind:value={regionPreset} disabled={recording}>
+							<optgroup label="Landscape (16:9)">
+								<option value="854x480">480p (854×480)</option>
+								<option value="1280x720">720p (1280×720)</option>
+								<option value="1920x1080">1080p (1920×1080)</option>
+								<option value="2560x1440">1440p (2560×1440)</option>
+								<option value="3840x2160">4K (3840×2160)</option>
+							</optgroup>
+							<optgroup label="Portrait (9:16)">
+								<option value="480x854">480×854</option>
+								<option value="720x1280">720×1280</option>
+								<option value="1080x1920">1080×1920</option>
+								<option value="1440x2560">1440×2560</option>
+								<option value="2160x3840">2160×3840</option>
+							</optgroup>
+							<optgroup label="Square (1:1)">
+								<option value="720x720">720×720</option>
+								<option value="1080x1080">1080×1080</option>
+								<option value="1440x1440">1440×1440</option>
+							</optgroup>
+						</select>
+					</div>
+
+					{#if previewBox && previewRegion && screenSize}
+						<div class="region-preview">
+							<svg
+								width={previewBox.w}
+								height={previewBox.h}
+								viewBox={`0 0 ${previewBox.w} ${previewBox.h}`}
+							>
+								<rect
+									class="screen-rect"
+									x="0"
+									y="0"
+									width={previewBox.w}
+									height={previewBox.h}
+								/>
+								<rect
+									class="region-rect"
+									class:dragging={dragStart !== null}
+									x={previewRegion.x * previewBox.scale}
+									y={previewRegion.y * previewBox.scale}
+									width={previewRegion.width * previewBox.scale}
+									height={previewRegion.height * previewBox.scale}
+									onpointerdown={onRectPointerDown}
+									onpointermove={onRectPointerMove}
+									onpointerup={onRectPointerUp}
+									onpointercancel={onRectPointerUp}
+								/>
+							</svg>
+							<div class="region-caption">
+								Screen {screenSize.w}×{screenSize.h} · Region {previewRegion.width}×{previewRegion.height}
+								@ ({previewRegion.x},{previewRegion.y})
+							</div>
+							<div class="region-actions">
+								<button class="preview-refresh" onclick={centerRegion} disabled={recording}>
+									Center
+								</button>
+								<button class="preview-refresh" onclick={toggleOverlay} disabled={recording}>
+									{overlayVisible ? 'Hide layout overlay' : 'Show layout overlay'}
+								</button>
+							</div>
+						</div>
+					{/if}
+				{/if}
+			{/if}
 
 			<div class="field">
 				<label for="fps">FPS</label>
@@ -215,6 +469,10 @@
 			<div class="output-info">
 				<p>Saved to:</p>
 				<code>{outputPath}</code>
+				<div class="output-actions">
+					<button onclick={openVideo}>Open video</button>
+					<button onclick={showInFolder}>Show in folder</button>
+				</div>
 			</div>
 		{/if}
 	{/if}
@@ -412,7 +670,95 @@
 		word-break: break-all;
 	}
 
+	.output-actions {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: center;
+		margin-top: 0.75rem;
+	}
+
+	.output-actions button {
+		background: #2a2a2a;
+		border: 1px solid #3a3a3a;
+		border-radius: 6px;
+		padding: 0.4rem 0.9rem;
+		color: #ffffff;
+		cursor: pointer;
+		font-size: 0.75rem;
+		font-family: 'JetBrains Mono', monospace;
+	}
+
+	.output-actions button:hover {
+		background: #333;
+	}
+
 	input[type='checkbox'] {
 		accent-color: #ef4444;
+	}
+
+	.region-preview {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem;
+		background: #222;
+		border: 1px solid #333;
+		border-radius: 6px;
+	}
+
+	.region-preview svg {
+		display: block;
+	}
+
+	.region-preview .screen-rect {
+		fill: #1a1a1a;
+		stroke: #444;
+		stroke-width: 1;
+	}
+
+	.region-preview .region-rect {
+		fill: rgba(239, 68, 68, 0.25);
+		stroke: #ef4444;
+		stroke-width: 1;
+		cursor: grab;
+		touch-action: none;
+	}
+
+	.region-preview .region-rect.dragging {
+		cursor: grabbing;
+	}
+
+	.region-actions {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: center;
+		flex-wrap: wrap;
+	}
+
+	.region-caption {
+		font-size: 0.7rem;
+		color: #888;
+		text-align: center;
+	}
+
+	.preview-refresh {
+		background: #2a2a2a;
+		border: 1px solid #3a3a3a;
+		border-radius: 6px;
+		padding: 0.35rem 0.8rem;
+		color: #ffffff;
+		cursor: pointer;
+		font-size: 0.7rem;
+		font-family: 'JetBrains Mono', monospace;
+	}
+
+	.preview-refresh:hover:not(:disabled) {
+		background: #333;
+	}
+
+	.preview-refresh:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>

@@ -27,6 +27,14 @@ pub struct RecordingSource {
     pub source_type: String, // "screen" or "window"
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct Region {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RecordingConfig {
     pub source_id: String,
@@ -34,6 +42,7 @@ pub struct RecordingConfig {
     pub fps: u32,
     pub capture_audio: bool,
     pub audio_device: Option<String>,
+    pub region: Option<Region>,
 }
 
 /// Create a Command that won't spawn a visible console window on Windows.
@@ -384,6 +393,7 @@ fn generate_output_path(output_dir: &str) -> String {
 
 #[tauri::command]
 pub fn start_recording(
+    app: tauri::AppHandle,
     state: State<RecorderState>,
     config: RecordingConfig,
 ) -> Result<String, String> {
@@ -391,6 +401,9 @@ pub fn start_recording(
     if process.is_some() {
         return Err("Already recording".to_string());
     }
+
+    // Close the layout overlay so its outline doesn't end up in the recording.
+    crate::overlay::close_overlay(&app);
 
     let ffmpeg = find_ffmpeg(&state);
     let output_path = generate_output_path(&config.output_dir);
@@ -416,6 +429,15 @@ pub fn start_recording(
             ]);
         }
 
+        // Crop to region if requested (avfoundation has no native region flag)
+        if let Some(r) = config.region {
+            let w = r.width & !1;
+            let h = r.height & !1;
+            args.extend_from_slice(&[
+                "-vf".into(), format!("crop={}:{}:{}:{}", w, h, r.x, r.y),
+            ]);
+        }
+
         // Video encoding — try hardware acceleration first
         args.extend_from_slice(&[
             "-c:v".into(), "h264_videotoolbox".into(),
@@ -438,14 +460,18 @@ pub fn start_recording(
             "-framerate".into(), config.fps.to_string(),
         ]);
 
-        // For window capture, get the window's screen rect and capture that region
+        // Compute capture rect: window handle -> window bounds; region -> user rect; else full desktop
         let is_window_capture = config.source_id.starts_with("hwnd:");
-        if is_window_capture {
+        let rect = if is_window_capture {
             let hwnd: isize = config.source_id[5..]
                 .parse()
                 .map_err(|_| "Invalid window handle".to_string())?;
-            let (x, y, w, h) = get_window_rect_by_hwnd(hwnd)?;
-            // Round dimensions down to even numbers (h264 requirement)
+            Some(get_window_rect_by_hwnd(hwnd)?)
+        } else {
+            config.region.map(|r| (r.x, r.y, r.width as i32, r.height as i32))
+        };
+
+        if let Some((x, y, w, h)) = rect {
             let w = w & !1;
             let h = h & !1;
             args.extend_from_slice(&[
@@ -492,7 +518,21 @@ pub fn start_recording(
         args.extend_from_slice(&[
             "-f".into(), "x11grab".into(),
             "-framerate".into(), config.fps.to_string(),
-            "-i".into(), config.source_id.clone(),
+        ]);
+
+        let input = if let Some(r) = config.region {
+            let w = r.width & !1;
+            let h = r.height & !1;
+            args.extend_from_slice(&[
+                "-video_size".into(), format!("{}x{}", w, h),
+            ]);
+            format!("{}+{},{}", config.source_id, r.x, r.y)
+        } else {
+            config.source_id.clone()
+        };
+
+        args.extend_from_slice(&[
+            "-i".into(), input,
             "-c:v".into(), "libx264".into(),
             "-preset".into(), "ultrafast".into(),
             "-pix_fmt".into(), "yuv420p".into(),

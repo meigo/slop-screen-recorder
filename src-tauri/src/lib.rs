@@ -1,3 +1,4 @@
+mod overlay;
 mod recorder;
 
 use recorder::RecorderState;
@@ -32,6 +33,8 @@ pub fn run() {
             recorder::stop_recording,
             recorder::is_recording,
             recorder::get_default_output_dir,
+            overlay::show_region_overlay,
+            overlay::hide_region_overlay,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

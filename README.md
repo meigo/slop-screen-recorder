@@ -8,6 +8,7 @@ Wraps FFmpeg with a clean native UI — select a source, hit record, get an MP4.
 
 - **Cross-platform** — macOS, Windows, and Linux
 - **Window capture** — record a specific window or the full desktop (Windows enumerates visible windows via Win32 API)
+- **Region capture** — record a fixed-resolution region in landscape, portrait, or square (480p up to 4K) anchored to a corner or the center of the screen
 - **Hardware-accelerated encoding** — H.264 via VideoToolbox (macOS), with fallback to libx264
 - **Audio capture** — optional microphone recording
 - **Configurable** — choose source, FPS (15/24/25/30/60), and output directory
