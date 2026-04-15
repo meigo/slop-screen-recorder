@@ -108,7 +108,12 @@
 	function centerRegion() {
 		const size = currentRegionSize();
 		if (!size) return;
-		const pos = clampPosition((screenSize!.w - size.w) / 2, (screenSize!.h - size.h) / 2, size.w, size.h);
+		const pos = clampPosition(
+			(screenSize!.w - size.w) / 2,
+			(screenSize!.h - size.h) / 2,
+			size.w,
+			size.h,
+		);
 		regionX = pos.x;
 		regionY = pos.y;
 	}
@@ -256,7 +261,7 @@
 		sources = srcs;
 		if (!sources.find((s) => s.id === selectedSource)) {
 			const screen = sources.find((s) => s.source_type === 'screen');
-			selectedSource = screen ? screen.id : sources[0]?.id ?? '';
+			selectedSource = screen ? screen.id : (sources[0]?.id ?? '');
 		}
 	}
 
@@ -273,7 +278,12 @@
 		}
 	}
 
-	let dragStart = $state<{ mouseX: number; mouseY: number; regionX: number; regionY: number } | null>(null);
+	let dragStart = $state<{
+		mouseX: number;
+		mouseY: number;
+		regionX: number;
+		regionY: number;
+	} | null>(null);
 
 	function onRectPointerDown(e: PointerEvent) {
 		if (recording) return;
@@ -290,7 +300,12 @@
 		const dyScreen = dyPreview / previewBox.scale;
 		const size = currentRegionSize();
 		if (!size) return;
-		const pos = clampPosition(dragStart.regionX + dxScreen, dragStart.regionY + dyScreen, size.w, size.h);
+		const pos = clampPosition(
+			dragStart.regionX + dxScreen,
+			dragStart.regionY + dyScreen,
+			size.w,
+			size.h,
+		);
 		regionX = pos.x;
 		regionY = pos.y;
 	}
@@ -393,7 +408,12 @@
 			<div class="controls">
 				<div class="field">
 					<label for="source">Source</label>
-					<select id="source" bind:value={selectedSource} disabled={recording} onfocus={refreshSources}>
+					<select
+						id="source"
+						bind:value={selectedSource}
+						disabled={recording}
+						onfocus={refreshSources}
+					>
 						{#each sources as source (source.id)}
 							<option value={source.id}>{source.name}</option>
 						{/each}
@@ -401,88 +421,88 @@
 				</div>
 
 				{#if canUseRegion}
-				<label class="check">
-					<input type="checkbox" bind:checked={useRegion} disabled={recording} />
-					<span>Record region only</span>
-				</label>
+					<label class="check">
+						<input type="checkbox" bind:checked={useRegion} disabled={recording} />
+						<span>Record region only</span>
+					</label>
 
-				{#if useRegion}
-					<div class="field">
-						<label for="region-size">Region size</label>
-						<select id="region-size" bind:value={regionPreset} disabled={recording}>
-							<optgroup label="Landscape (16:9)">
-								<option value="854x480">480p (854×480)</option>
-								<option value="1280x720">720p (1280×720)</option>
-								<option value="1920x1080">1080p (1920×1080)</option>
-								<option value="2560x1440">1440p (2560×1440)</option>
-								<option value="3840x2160">4K (3840×2160)</option>
-							</optgroup>
-							<optgroup label="Portrait (9:16)">
-								<option value="480x854">480×854</option>
-								<option value="720x1280">720×1280</option>
-								<option value="1080x1920">1080×1920</option>
-								<option value="1440x2560">1440×2560</option>
-								<option value="2160x3840">2160×3840</option>
-							</optgroup>
-							<optgroup label="Square (1:1)">
-								<option value="720x720">720×720</option>
-								<option value="1080x1080">1080×1080</option>
-								<option value="1440x1440">1440×1440</option>
-							</optgroup>
-						</select>
-					</div>
+					{#if useRegion}
+						<div class="field">
+							<label for="region-size">Region size</label>
+							<select id="region-size" bind:value={regionPreset} disabled={recording}>
+								<optgroup label="Landscape (16:9)">
+									<option value="854x480">480p (854×480)</option>
+									<option value="1280x720">720p (1280×720)</option>
+									<option value="1920x1080">1080p (1920×1080)</option>
+									<option value="2560x1440">1440p (2560×1440)</option>
+									<option value="3840x2160">4K (3840×2160)</option>
+								</optgroup>
+								<optgroup label="Portrait (9:16)">
+									<option value="480x854">480×854</option>
+									<option value="720x1280">720×1280</option>
+									<option value="1080x1920">1080×1920</option>
+									<option value="1440x2560">1440×2560</option>
+									<option value="2160x3840">2160×3840</option>
+								</optgroup>
+								<optgroup label="Square (1:1)">
+									<option value="720x720">720×720</option>
+									<option value="1080x1080">1080×1080</option>
+									<option value="1440x1440">1440×1440</option>
+								</optgroup>
+							</select>
+						</div>
 
-					{#if previewBox && previewRegion && screenSize}
-						<div class="region-preview">
-							<svg
-								width={previewBox.w}
-								height={previewBox.h}
-								viewBox={`0 0 ${previewBox.w} ${previewBox.h}`}
-							>
-								<rect
-									class="screen-rect"
-									x="0"
-									y="0"
+						{#if previewBox && previewRegion && screenSize}
+							<div class="region-preview">
+								<svg
 									width={previewBox.w}
 									height={previewBox.h}
-								/>
-								<rect
-									class="region-rect"
-									class:dragging={dragStart !== null}
-									x={previewRegion.x * previewBox.scale}
-									y={previewRegion.y * previewBox.scale}
-									width={previewRegion.width * previewBox.scale}
-									height={previewRegion.height * previewBox.scale}
-									role="button"
-									tabindex="0"
-									aria-label="Region position — drag or use arrow keys (hold shift for larger steps)"
-									onpointerdown={onRectPointerDown}
-									onpointermove={onRectPointerMove}
-									onpointerup={onRectPointerUp}
-									onpointercancel={onRectPointerUp}
-									onkeydown={onRectKeyDown}
-								/>
-							</svg>
-							<div class="region-caption">
-								{screenSize.w}×{screenSize.h} · region {previewRegion.width}×{previewRegion.height}
-								@ {previewRegion.x},{previewRegion.y}
+									viewBox={`0 0 ${previewBox.w} ${previewBox.h}`}
+								>
+									<rect
+										class="screen-rect"
+										x="0"
+										y="0"
+										width={previewBox.w}
+										height={previewBox.h}
+									/>
+									<rect
+										class="region-rect"
+										class:dragging={dragStart !== null}
+										x={previewRegion.x * previewBox.scale}
+										y={previewRegion.y * previewBox.scale}
+										width={previewRegion.width * previewBox.scale}
+										height={previewRegion.height * previewBox.scale}
+										role="button"
+										tabindex="0"
+										aria-label="Region position — drag or use arrow keys (hold shift for larger steps)"
+										onpointerdown={onRectPointerDown}
+										onpointermove={onRectPointerMove}
+										onpointerup={onRectPointerUp}
+										onpointercancel={onRectPointerUp}
+										onkeydown={onRectKeyDown}
+									/>
+								</svg>
+								<div class="region-caption">
+									{screenSize.w}×{screenSize.h} · region {previewRegion.width}×{previewRegion.height}
+									@ {previewRegion.x},{previewRegion.y}
+								</div>
+								<div class="region-actions">
+									<button class="ghost" onclick={centerRegion} disabled={recording}>
+										<Crosshair size={13} strokeWidth={1.5} /> Center
+									</button>
+									<button class="ghost" onclick={toggleOverlay} disabled={recording}>
+										{#if overlayVisible}
+											<RefreshCw size={13} strokeWidth={1.5} /> Hide overlay
+										{:else}
+											<Maximize2 size={13} strokeWidth={1.5} /> Show overlay
+										{/if}
+									</button>
+								</div>
 							</div>
-							<div class="region-actions">
-								<button class="ghost" onclick={centerRegion} disabled={recording}>
-									<Crosshair size={13} strokeWidth={1.5} /> Center
-								</button>
-								<button class="ghost" onclick={toggleOverlay} disabled={recording}>
-									{#if overlayVisible}
-										<RefreshCw size={13} strokeWidth={1.5} /> Hide overlay
-									{:else}
-										<Maximize2 size={13} strokeWidth={1.5} /> Show overlay
-									{/if}
-								</button>
-							</div>
-						</div>
+						{/if}
 					{/if}
 				{/if}
-			{/if}
 
 				<details class="settings">
 					<summary>
@@ -527,7 +547,12 @@
 							<label for="output">Output directory</label>
 							<div class="dir-picker">
 								<input id="output" type="text" bind:value={outputDir} readonly />
-								<button class="ghost" onclick={pickOutputDir} disabled={recording} aria-label="Browse">
+								<button
+									class="ghost"
+									onclick={pickOutputDir}
+									disabled={recording}
+									aria-label="Browse"
+								>
 									<Folder size={14} strokeWidth={1.5} />
 								</button>
 							</div>
@@ -850,8 +875,13 @@
 	}
 
 	@keyframes pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.3; }
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.3;
+		}
 	}
 
 	.btn {

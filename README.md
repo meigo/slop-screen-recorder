@@ -31,6 +31,7 @@ Wraps FFmpeg with a clean native UI — select a source, hit record, get an MP4.
 **Windows:** `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
 
 **Linux:** `sudo apt install ffmpeg`
+
 </details>
 
 ## Getting Started
@@ -48,15 +49,17 @@ npm run tauri build
 
 ## Scripts
 
-| Command | Description |
-|---|---|
-| `npm run tauri dev` | Start the app in development mode with hot reload |
-| `npm run tauri build` | Build a production binary/installer |
-| `npm test` | Run all checks (lint + type check + clippy + rust tests) |
-| `npm run lint` | Run ESLint |
-| `npm run lint:fix` | Run ESLint with auto-fix |
-| `npm run check` | Run svelte-check (TypeScript + Svelte type checking) |
-| `npm run test:rust` | Run cargo clippy and cargo test |
+| Command                | Description                                                       |
+| ---------------------- | ----------------------------------------------------------------- |
+| `npm run tauri dev`    | Start the app in development mode with hot reload                 |
+| `npm run tauri build`  | Build a production binary/installer                               |
+| `npm test`             | Run all checks (format + lint + type check + clippy + rust tests) |
+| `npm run format`       | Format all files with Prettier                                    |
+| `npm run format:check` | Check formatting without writing changes                          |
+| `npm run lint`         | Run ESLint                                                        |
+| `npm run lint:fix`     | Run ESLint with auto-fix                                          |
+| `npm run check`        | Run svelte-check (TypeScript + Svelte type checking)              |
+| `npm run test:rust`    | Run cargo clippy and cargo test                                   |
 
 ## Project Structure
 
@@ -78,11 +81,11 @@ slop-screen-recorder/
 
 The Rust backend spawns FFmpeg as a child process with platform-specific capture arguments:
 
-| Platform | Capture | Encoder |
-|---|---|---|
-| macOS | `avfoundation` | `h264_videotoolbox` (hardware) |
-| Windows | `gdigrab` | `libx264` |
-| Linux | `x11grab` | `libx264` |
+| Platform | Capture        | Encoder                        |
+| -------- | -------------- | ------------------------------ |
+| macOS    | `avfoundation` | `h264_videotoolbox` (hardware) |
+| Windows  | `gdigrab`      | `libx264`                      |
+| Linux    | `x11grab`      | `libx264`                      |
 
 Recording starts by sending the appropriate FFmpeg command and stops by writing `q` to stdin for a graceful shutdown that finalizes the MP4 file.
 
