@@ -38,6 +38,7 @@ pub struct RecordingConfig {
 
 /// Create a Command that won't spawn a visible console window on Windows.
 fn ffmpeg_command(path: &PathBuf) -> Command {
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
     let mut cmd = Command::new(path);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
