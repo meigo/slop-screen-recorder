@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window';
+	import { getCurrentWindow, primaryMonitor } from '@tauri-apps/api/window';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 	import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
@@ -42,24 +42,11 @@
 		region: Region | null;
 	}
 
-	const REGION_PRESETS: Record<string, { w: number; h: number }> = {
-		// Landscape (16:9)
-		'854x480': { w: 854, h: 480 },
-		'1280x720': { w: 1280, h: 720 },
-		'1920x1080': { w: 1920, h: 1080 },
-		'2560x1440': { w: 2560, h: 1440 },
-		'3840x2160': { w: 3840, h: 2160 },
-		// Portrait (9:16)
-		'480x854': { w: 480, h: 854 },
-		'720x1280': { w: 720, h: 1280 },
-		'1080x1920': { w: 1080, h: 1920 },
-		'1440x2560': { w: 1440, h: 2560 },
-		'2160x3840': { w: 2160, h: 3840 },
-		// Square (1:1)
-		'720x720': { w: 720, h: 720 },
-		'1080x1080': { w: 1080, h: 1080 },
-		'1440x1440': { w: 1440, h: 1440 },
-	};
+	function parsePreset(key: string): { w: number; h: number } | null {
+		const m = key.match(/^(\d+)x(\d+)$/);
+		if (!m) return null;
+		return { w: Number(m[1]), h: Number(m[2]) };
+	}
 
 	let theme = $state<'dark' | 'light'>('dark');
 	let loading = $state(true);
@@ -102,7 +89,7 @@
 
 	function currentRegionSize(): { w: number; h: number } | null {
 		if (!screenSize) return null;
-		const preset = REGION_PRESETS[regionPreset];
+		const preset = parsePreset(regionPreset);
 		if (!preset) return null;
 		return {
 			w: Math.min(preset.w, screenSize.w) & ~1,
@@ -177,7 +164,7 @@
 		audioDevices = audio;
 		outputDir = defaultDir;
 
-		const monitor = await currentMonitor();
+		const monitor = await primaryMonitor();
 		if (monitor) {
 			screenSize = { w: monitor.size.width, h: monitor.size.height };
 			centerRegion();
@@ -224,10 +211,21 @@
 			region: computeRegion(),
 		};
 
+		// Close the layout overlay first and give the compositor a beat to
+		// unmap it so the red outline never lands in the first frame.
+		if (overlayVisible) {
+			try {
+				await invoke('hide_region_overlay');
+			} catch {
+				// ignore
+			}
+			overlayVisible = false;
+			await new Promise((r) => setTimeout(r, 150));
+		}
+
 		try {
 			outputPath = await invoke<string>('start_recording', { config });
 			recording = true;
-			overlayVisible = false;
 			elapsed = 0;
 			timer = setInterval(() => elapsed++, 1000);
 			if (minimizeOnRecord) {
@@ -303,6 +301,35 @@
 		dragStart = null;
 	}
 
+	function onRectKeyDown(e: KeyboardEvent) {
+		if (recording) return;
+		const step = e.shiftKey ? 50 : 10;
+		let dx = 0;
+		let dy = 0;
+		switch (e.key) {
+			case 'ArrowLeft':
+				dx = -step;
+				break;
+			case 'ArrowRight':
+				dx = step;
+				break;
+			case 'ArrowUp':
+				dy = -step;
+				break;
+			case 'ArrowDown':
+				dy = step;
+				break;
+			default:
+				return;
+		}
+		e.preventDefault();
+		const size = currentRegionSize();
+		if (!size) return;
+		const pos = clampPosition(regionX + dx, regionY + dy, size.w, size.h);
+		regionX = pos.x;
+		regionY = pos.y;
+	}
+
 	async function toggleOverlay() {
 		if (overlayVisible) {
 			await invoke('hide_region_overlay');
@@ -317,6 +344,8 @@
 
 	$effect(() => {
 		if (!overlayVisible) return;
+		// Skip updates mid-drag; onRectPointerUp fires one final sync.
+		if (dragStart) return;
 		if (!previewRegion) return;
 		invoke('show_region_overlay', previewRegion).catch(() => {});
 	});
@@ -425,12 +454,13 @@
 									width={previewRegion.width * previewBox.scale}
 									height={previewRegion.height * previewBox.scale}
 									role="button"
-									tabindex="-1"
-									aria-label="Drag to reposition region"
+									tabindex="0"
+									aria-label="Region position — drag or use arrow keys (hold shift for larger steps)"
 									onpointerdown={onRectPointerDown}
 									onpointermove={onRectPointerMove}
 									onpointerup={onRectPointerUp}
 									onpointercancel={onRectPointerUp}
+									onkeydown={onRectKeyDown}
 								/>
 							</svg>
 							<div class="region-caption">
@@ -935,6 +965,12 @@
 
 	.region-preview .region-rect.dragging {
 		cursor: grabbing;
+	}
+
+	.region-preview .region-rect:focus {
+		outline: none;
+		stroke-width: 2;
+		fill-opacity: 0.25;
 	}
 
 	.region-actions {

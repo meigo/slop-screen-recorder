@@ -462,6 +462,9 @@ pub fn start_recording(
 
         // Compute capture rect: window handle -> window bounds; region -> user rect; else full desktop
         let is_window_capture = config.source_id.starts_with("hwnd:");
+        if is_window_capture && config.region.is_some() {
+            return Err("Region capture is not supported with a window source".to_string());
+        }
         let rect = if is_window_capture {
             let hwnd: isize = config.source_id[5..]
                 .parse()

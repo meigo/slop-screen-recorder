@@ -9,16 +9,14 @@
     "core:default",
     "dialog:default",
     "dialog:allow-open",
-    "shell:default",
-    "shell:allow-execute",
     "opener:default",
     {
       "identifier": "opener:allow-open-path",
-      "allow": [{ "path": "$HOME/**" }, { "path": "$VIDEOS/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOCUMENT/**" }]
+      "allow": [{ "path": "**" }]
     },
     {
       "identifier": "opener:allow-reveal-item-in-dir",
-      "allow": [{ "path": "$HOME/**" }, { "path": "$VIDEOS/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOCUMENT/**" }]
+      "allow": [{ "path": "**" }]
     },
     "core:window:allow-minimize",
     "core:window:allow-unminimize",
