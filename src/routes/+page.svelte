@@ -5,6 +5,20 @@
 	import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 	import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 	import { onMount, onDestroy } from 'svelte';
+	import {
+		MonitorDot,
+		Sun,
+		Moon,
+		Folder,
+		FolderOpen,
+		Play,
+		Square,
+		Circle,
+		Maximize2,
+		Crosshair,
+		RefreshCw,
+		ChevronRight,
+	} from '@lucide/svelte';
 
 	interface Source {
 		id: string;
@@ -47,7 +61,7 @@
 		'1440x1440': { w: 1440, h: 1440 },
 	};
 
-
+	let theme = $state<'dark' | 'light'>('dark');
 	let loading = $state(true);
 	let ffmpegAvailable = $state(false);
 	let sources = $state<Source[]>([]);
@@ -78,11 +92,10 @@
 		if (!useRegion || !screenSize) return null;
 		return computeRegion();
 	});
-	// Fit a preview box inside a max 280×160 area while preserving aspect ratio.
 	const previewBox = $derived.by(() => {
 		if (!screenSize) return null;
 		const maxW = 280;
-		const maxH = 160;
+		const maxH = 150;
 		const scale = Math.min(maxW / screenSize.w, maxH / screenSize.h);
 		return { w: screenSize.w * scale, h: screenSize.h * scale, scale };
 	});
@@ -121,7 +134,6 @@
 		return { x: pos.x, y: pos.y, width: size.w, height: size.h };
 	}
 
-	// Re-clamp x/y whenever preset size or screen changes so the rect stays on-screen.
 	$effect(() => {
 		const size = currentRegionSize();
 		if (!size) return;
@@ -130,7 +142,27 @@
 		if (pos.y !== regionY) regionY = pos.y;
 	});
 
+	$effect(() => {
+		document.documentElement.dataset.theme = theme;
+		try {
+			localStorage.setItem('theme', theme);
+		} catch {
+			// ignore
+		}
+	});
+
+	function toggleTheme() {
+		theme = theme === 'dark' ? 'light' : 'dark';
+	}
+
 	onMount(async () => {
+		try {
+			const saved = localStorage.getItem('theme');
+			if (saved === 'dark' || saved === 'light') theme = saved;
+		} catch {
+			// ignore
+		}
+
 		ffmpegAvailable = await invoke<boolean>('check_ffmpeg');
 		loading = false;
 		if (!ffmpegAvailable) return;
@@ -151,7 +183,6 @@
 			centerRegion();
 		}
 
-		// Auto-select first screen source
 		const screen = sources.find((s) => s.source_type === 'screen');
 		if (screen) selectedSource = screen.id;
 
@@ -171,7 +202,7 @@
 		try {
 			await unregister('CommandOrControl+Shift+R');
 		} catch {
-			// ignore cleanup errors
+			// ignore
 		}
 	});
 
@@ -196,7 +227,7 @@
 		try {
 			outputPath = await invoke<string>('start_recording', { config });
 			recording = true;
-			overlayVisible = false; // backend closes it; sync local state
+			overlayVisible = false;
 			elapsed = 0;
 			timer = setInterval(() => elapsed++, 1000);
 			if (minimizeOnRecord) {
@@ -225,7 +256,6 @@
 	async function refreshSources() {
 		const srcs = await invoke<Source[]>('list_sources');
 		sources = srcs;
-		// If selected source no longer exists, fall back to first screen
 		if (!sources.find((s) => s.id === selectedSource)) {
 			const screen = sources.find((s) => s.source_type === 'screen');
 			selectedSource = screen ? screen.id : sources[0]?.id ?? '';
@@ -245,7 +275,7 @@
 		}
 	}
 
-	let dragStart: { mouseX: number; mouseY: number; regionX: number; regionY: number } | null = null;
+	let dragStart = $state<{ mouseX: number; mouseY: number; regionX: number; regionY: number } | null>(null);
 
 	function onRectPointerDown(e: PointerEvent) {
 		if (recording) return;
@@ -285,14 +315,12 @@
 		overlayVisible = true;
 	}
 
-	// Keep overlay in sync with region preset/position changes while it's visible.
 	$effect(() => {
 		if (!overlayVisible) return;
 		if (!previewRegion) return;
 		invoke('show_region_overlay', previewRegion).catch(() => {});
 	});
 
-	// Close overlay if source changes away from a screen source.
 	$effect(() => {
 		if (!canUseRegion && overlayVisible) {
 			invoke('hide_region_overlay').catch(() => {});
@@ -310,33 +338,44 @@
 </script>
 
 <main>
-	<h1>Slop Screen Recorder</h1>
+	<header class="topbar">
+		<div class="brand">
+			<MonitorDot size={20} strokeWidth={1.75} />
+			<span>slop screen recorder</span>
+		</div>
+		<button class="icon-btn" onclick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">
+			{#if theme === 'dark'}
+				<Sun size={14} strokeWidth={1.5} />
+			{:else}
+				<Moon size={14} strokeWidth={1.5} />
+			{/if}
+		</button>
+	</header>
 
 	{#if loading}
-		<!-- wait for init -->
+		<!-- init -->
 	{:else if !ffmpegAvailable}
 		<div class="error">
 			<p>FFmpeg not found.</p>
 			<p class="hint">Install FFmpeg and make sure it's available in your PATH.</p>
 		</div>
 	{:else}
-		<div class="controls">
-			<div class="field">
-				<label for="source">Source</label>
-				<select id="source" bind:value={selectedSource} disabled={recording} onfocus={refreshSources}>
-					{#each sources as source (source.id)}
-						<option value={source.id}>{source.name}</option>
-					{/each}
-				</select>
-			</div>
-
-			{#if canUseRegion}
-				<div class="field row">
-					<label>
-						<input type="checkbox" bind:checked={useRegion} disabled={recording} />
-						Record region only
-					</label>
+		<div class="scroll-area">
+			<div class="controls">
+				<div class="field">
+					<label for="source">Source</label>
+					<select id="source" bind:value={selectedSource} disabled={recording} onfocus={refreshSources}>
+						{#each sources as source (source.id)}
+							<option value={source.id}>{source.name}</option>
+						{/each}
+					</select>
 				</div>
+
+				{#if canUseRegion}
+				<label class="check">
+					<input type="checkbox" bind:checked={useRegion} disabled={recording} />
+					<span>Record region only</span>
+				</label>
 
 				{#if useRegion}
 					<div class="field">
@@ -385,6 +424,9 @@
 									y={previewRegion.y * previewBox.scale}
 									width={previewRegion.width * previewBox.scale}
 									height={previewRegion.height * previewBox.scale}
+									role="button"
+									tabindex="-1"
+									aria-label="Drag to reposition region"
 									onpointerdown={onRectPointerDown}
 									onpointermove={onRectPointerMove}
 									onpointerup={onRectPointerUp}
@@ -392,15 +434,19 @@
 								/>
 							</svg>
 							<div class="region-caption">
-								Screen {screenSize.w}×{screenSize.h} · Region {previewRegion.width}×{previewRegion.height}
-								@ ({previewRegion.x},{previewRegion.y})
+								{screenSize.w}×{screenSize.h} · region {previewRegion.width}×{previewRegion.height}
+								@ {previewRegion.x},{previewRegion.y}
 							</div>
 							<div class="region-actions">
-								<button class="preview-refresh" onclick={centerRegion} disabled={recording}>
-									Center
+								<button class="ghost" onclick={centerRegion} disabled={recording}>
+									<Crosshair size={13} strokeWidth={1.5} /> Center
 								</button>
-								<button class="preview-refresh" onclick={toggleOverlay} disabled={recording}>
-									{overlayVisible ? 'Hide layout overlay' : 'Show layout overlay'}
+								<button class="ghost" onclick={toggleOverlay} disabled={recording}>
+									{#if overlayVisible}
+										<RefreshCw size={13} strokeWidth={1.5} /> Hide overlay
+									{:else}
+										<Maximize2 size={13} strokeWidth={1.5} /> Show overlay
+									{/if}
 								</button>
 							</div>
 						</div>
@@ -408,302 +454,464 @@
 				{/if}
 			{/if}
 
-			<div class="field">
-				<label for="fps">FPS</label>
-				<select id="fps" bind:value={fps} disabled={recording}>
-					<option value={15}>15</option>
-					<option value={24}>24</option>
-					<option value={25}>25</option>
-					<option value={30}>30</option>
-					<option value={60}>60</option>
-				</select>
-			</div>
+				<details class="settings">
+					<summary>
+						<span class="chev"><ChevronRight size={14} strokeWidth={1.5} /></span>
+						<span>Settings</span>
+					</summary>
+					<div class="settings-body">
+						<div class="field">
+							<label for="fps">FPS</label>
+							<select id="fps" bind:value={fps} disabled={recording}>
+								<option value={15}>15</option>
+								<option value={24}>24</option>
+								<option value={25}>25</option>
+								<option value={30}>30</option>
+								<option value={60}>60</option>
+							</select>
+						</div>
 
-			<div class="field row">
-				<label>
-					<input type="checkbox" bind:checked={captureAudio} disabled={recording} />
-					Capture audio
-				</label>
-			</div>
+						<div class="checks">
+							<label class="check">
+								<input type="checkbox" bind:checked={captureAudio} disabled={recording} />
+								<span>Capture audio</span>
+							</label>
+							<label class="check">
+								<input type="checkbox" bind:checked={minimizeOnRecord} disabled={recording} />
+								<span>Minimize on record</span>
+							</label>
+						</div>
 
-			<div class="field row">
-				<label>
-					<input type="checkbox" bind:checked={minimizeOnRecord} disabled={recording} />
-					Minimize on record
-				</label>
-			</div>
+						{#if captureAudio && audioDevices.length > 0}
+							<div class="field">
+								<label for="audio">Audio device</label>
+								<select id="audio" bind:value={selectedAudio} disabled={recording}>
+									{#each audioDevices as device (device.id)}
+										<option value={device.id}>{device.name}</option>
+									{/each}
+								</select>
+							</div>
+						{/if}
 
-			{#if captureAudio && audioDevices.length > 0}
-				<div class="field">
-					<label for="audio">Audio device</label>
-					<select id="audio" bind:value={selectedAudio} disabled={recording}>
-						{#each audioDevices as device (device.id)}
-							<option value={device.id}>{device.name}</option>
-						{/each}
-					</select>
-				</div>
-			{/if}
-
-			<div class="field">
-				<label for="output">Output directory</label>
-				<div class="dir-picker">
-					<input id="output" type="text" bind:value={outputDir} readonly />
-					<button onclick={pickOutputDir} disabled={recording}>Browse</button>
-				</div>
+						<div class="field">
+							<label for="output">Output directory</label>
+							<div class="dir-picker">
+								<input id="output" type="text" bind:value={outputDir} readonly />
+								<button class="ghost" onclick={pickOutputDir} disabled={recording} aria-label="Browse">
+									<Folder size={14} strokeWidth={1.5} />
+								</button>
+							</div>
+						</div>
+					</div>
+				</details>
 			</div>
 		</div>
 
-		<div class="record-section">
-			{#if recording}
-				<div class="timer">{formatTime(elapsed)}</div>
-				<button class="btn stop" onclick={stopRecording}>Stop Recording</button>
-			{:else}
-				<button class="btn record" onclick={startRecording} disabled={!selectedSource}>
-					Start Recording
-				</button>
-			{/if}
-		</div>
-
-		{#if outputPath && !recording}
-			<div class="output-info">
-				<p>Saved to:</p>
-				<code>{outputPath}</code>
-				<div class="output-actions">
-					<button onclick={openVideo}>Open video</button>
-					<button onclick={showInFolder}>Show in folder</button>
+		<div class="record-bar">
+			{#if outputPath && !recording}
+				<div class="output-info">
+					<code title={outputPath}>{outputPath.split(/[/\\]/).pop()}</code>
+					<div class="output-actions">
+						<button class="ghost" onclick={openVideo} aria-label="Open video">
+							<Play size={13} strokeWidth={1.5} />
+						</button>
+						<button class="ghost" onclick={showInFolder} aria-label="Show in folder">
+							<FolderOpen size={13} strokeWidth={1.5} />
+						</button>
+					</div>
 				</div>
+			{/if}
+
+			<div class="record-section">
+				{#if recording}
+					<div class="timer">
+						<span class="rec-pulse"></span>
+						{formatTime(elapsed)}
+					</div>
+					<button class="btn" onclick={stopRecording}>
+						<Square size={14} strokeWidth={1.5} fill="currentColor" /> Stop
+					</button>
+				{:else}
+					<button class="btn primary" onclick={startRecording} disabled={!selectedSource}>
+						<Circle size={14} strokeWidth={1.5} /> Record
+					</button>
+				{/if}
 			</div>
-		{/if}
+		</div>
 	{/if}
 </main>
 
 <style>
+	:global(:root),
+	:global([data-theme='dark']) {
+		--bg: #0d0d0d;
+		--surface: #151515;
+		--surface-2: #1e1e1e;
+		--border: #262626;
+		--border-strong: #3a3a3a;
+		--text: #e6e6e6;
+		--text-dim: #888;
+		--text-faint: #555;
+		--accent: #e6e6e6;
+		--rec: #ef4444;
+	}
+
+	:global([data-theme='light']) {
+		--bg: #fafafa;
+		--surface: #ffffff;
+		--surface-2: #f2f2f2;
+		--border: #e5e5e5;
+		--border-strong: #c8c8c8;
+		--text: #111111;
+		--text-dim: #6b6b6b;
+		--text-faint: #aaaaaa;
+		--accent: #111111;
+		--rec: #dc2626;
+	}
+
+	:global(html),
 	:global(body) {
 		margin: 0;
-		font-family: 'JetBrains Mono', monospace;
-		background: #1a1a1a;
-		color: #ffffff;
+		background: var(--bg);
+		color: var(--text);
+		height: 100%;
+	}
+
+	:global(body) {
+		font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+		font-size: 13px;
+		line-height: 1.4;
+		overflow: hidden;
 	}
 
 	main {
-		max-width: 480px;
+		max-width: 440px;
 		margin: 0 auto;
-		padding: 2rem;
+		height: 100vh;
+		display: flex;
+		flex-direction: column;
+		padding: 0 1rem;
+		box-sizing: border-box;
 	}
 
-	h1 {
-		text-align: center;
-		font-size: 1.3rem;
-		font-weight: 700;
-		margin-bottom: 2rem;
-		color: #ffffff;
-		letter-spacing: -0.02em;
+	.topbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.75rem 0;
+		border-bottom: 1px solid var(--border);
+		flex-shrink: 0;
+	}
+
+	.scroll-area {
+		flex: 1;
+		overflow-y: auto;
+		padding: 0.75rem 0;
+		min-height: 0;
+	}
+
+	.record-bar {
+		flex-shrink: 0;
+		padding: 0.75rem 0 1rem;
+		border-top: 1px solid var(--border);
+		background: var(--bg);
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+
+	.settings > summary {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		cursor: pointer;
+		list-style: none;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-dim);
+		user-select: none;
+		padding: 0.2rem 0;
+	}
+
+	.settings > summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.settings > summary:hover {
+		color: var(--text);
+	}
+
+	.settings .chev {
+		display: inline-flex;
+		transition: transform 0.15s;
+	}
+
+	.settings[open] .chev {
+		transform: rotate(90deg);
+	}
+
+	.settings-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+		margin-top: 0.5rem;
+	}
+
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
+		font-size: 1rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		text-transform: lowercase;
+		color: var(--text);
 	}
 
 	.error {
-		background: #2a2020;
-		border: 1px solid #443030;
-		border-radius: 8px;
-		padding: 1.5rem;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 2px;
+		padding: 1rem;
 		text-align: center;
 	}
 
 	.error p {
-		margin: 0.5rem 0;
+		margin: 0.25rem 0;
 	}
 
 	.hint {
-		font-size: 0.8rem;
-		color: #888;
+		font-size: 0.75rem;
+		color: var(--text-dim);
 	}
 
 	code {
-		background: #2a2a2a;
-		padding: 0.2rem 0.5rem;
-		border-radius: 4px;
-		font-size: 0.8rem;
-		font-family: 'JetBrains Mono', monospace;
+		background: var(--surface-2);
+		padding: 0.15rem 0.35rem;
+		border-radius: 2px;
+		font-size: 0.72rem;
+		font-family: inherit;
+		color: var(--text);
 	}
 
 	.controls {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 0.55rem;
 	}
 
 	.field {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
-	}
-
-	.field.row {
-		flex-direction: row;
-		align-items: center;
+		gap: 0.2rem;
 	}
 
 	label {
-		font-size: 0.8rem;
-		color: #888;
+		font-size: 0.68rem;
+		color: var(--text-dim);
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.06em;
 	}
 
-	.field.row label {
-		display: flex;
+	.check {
+		display: inline-flex;
 		align-items: center;
-		gap: 0.5rem;
-		color: #ccc;
+		gap: 0.45rem;
+		color: var(--text);
 		text-transform: none;
 		letter-spacing: normal;
+		font-size: 0.78rem;
 		cursor: pointer;
+	}
+
+	.checks {
+		display: flex;
+		gap: 1rem;
+		flex-wrap: wrap;
 	}
 
 	select,
 	input[type='text'] {
-		background: #2a2a2a;
-		border: 1px solid #3a3a3a;
-		border-radius: 6px;
-		padding: 0.5rem 0.75rem;
-		color: #ffffff;
-		font-size: 0.85rem;
-		font-family: 'JetBrains Mono', monospace;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 2px;
+		padding: 0.35rem 0.5rem;
+		color: var(--text);
+		font-size: 0.78rem;
+		font-family: inherit;
 	}
 
 	select:focus,
 	input:focus {
 		outline: none;
-		border-color: #666;
+		border-color: var(--border-strong);
 	}
 
 	.dir-picker {
 		display: flex;
-		gap: 0.5rem;
+		gap: 0.35rem;
 	}
 
 	.dir-picker input {
 		flex: 1;
 	}
 
-	.dir-picker button {
-		background: #2a2a2a;
-		border: 1px solid #3a3a3a;
-		border-radius: 6px;
-		padding: 0.5rem 1rem;
-		color: #ffffff;
-		cursor: pointer;
-		font-size: 0.8rem;
-		font-family: 'JetBrains Mono', monospace;
+	button {
+		font-family: inherit;
 	}
 
-	.dir-picker button:hover {
-		background: #333;
+	.ghost {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.35rem;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 2px;
+		padding: 0.3rem 0.6rem;
+		color: var(--text);
+		cursor: pointer;
+		font-size: 0.72rem;
+	}
+
+	.ghost:hover:not(:disabled) {
+		border-color: var(--border-strong);
+	}
+
+	.ghost:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.icon-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: 2px;
+		color: var(--text);
+		cursor: pointer;
+	}
+
+	.icon-btn:hover {
+		border-color: var(--border-strong);
+	}
+
+	.timer {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		font-size: 1.4rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: var(--text);
+	}
+
+	.rec-pulse {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--rec);
+		animation: pulse 1s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.3; }
+	}
+
+	.btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.4rem;
+		border: 1px solid var(--border-strong);
+		background: var(--surface);
+		color: var(--text);
+		border-radius: 2px;
+		padding: 0.5rem 1.25rem;
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: background 0.1s;
+	}
+
+	.btn:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+
+	.btn:hover:not(:disabled) {
+		border-color: var(--text-dim);
+	}
+
+	.btn.primary {
+		background: var(--accent);
+		color: var(--bg);
+		border-color: var(--accent);
+	}
+
+	.btn.primary:hover:not(:disabled) {
+		opacity: 0.85;
+	}
+
+	.output-info {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 2px;
+		padding: 0.35rem 0.5rem;
+		font-size: 0.7rem;
+	}
+
+	.output-info code {
+		flex: 1;
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		background: transparent;
+		padding: 0;
+	}
+
+	.output-actions {
+		display: flex;
+		gap: 0.3rem;
+		flex-shrink: 0;
+	}
+
+	.output-actions .ghost {
+		padding: 0.25rem 0.4rem;
 	}
 
 	.record-section {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 1rem;
-		margin-top: 2rem;
-	}
-
-	.timer {
-		font-size: 2.5rem;
-		font-weight: 700;
-		font-variant-numeric: tabular-nums;
-		color: #ef4444;
-	}
-
-	.btn {
-		border: none;
-		border-radius: 8px;
-		padding: 0.85rem 2.5rem;
-		font-size: 0.9rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.15s;
-		font-family: 'JetBrains Mono', monospace;
-	}
-
-	.btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.btn.record {
-		background: #ef4444;
-		color: white;
-	}
-
-	.btn.record:hover:not(:disabled) {
-		background: #dc2626;
-		transform: scale(1.03);
-	}
-
-	.btn.stop {
-		background: #333;
-		color: white;
-	}
-
-	.btn.stop:hover {
-		background: #444;
-	}
-
-	.output-info {
-		margin-top: 1.5rem;
-		background: #1e2e1e;
-		border: 1px solid #2a3e2a;
-		border-radius: 8px;
-		padding: 1rem;
-		text-align: center;
-	}
-
-	.output-info p {
-		margin: 0 0 0.5rem 0;
-		font-size: 0.8rem;
-		color: #888;
-	}
-
-	.output-info code {
-		word-break: break-all;
-	}
-
-	.output-actions {
-		display: flex;
-		gap: 0.5rem;
-		justify-content: center;
-		margin-top: 0.75rem;
-	}
-
-	.output-actions button {
-		background: #2a2a2a;
-		border: 1px solid #3a3a3a;
-		border-radius: 6px;
-		padding: 0.4rem 0.9rem;
-		color: #ffffff;
-		cursor: pointer;
-		font-size: 0.75rem;
-		font-family: 'JetBrains Mono', monospace;
-	}
-
-	.output-actions button:hover {
-		background: #333;
+		gap: 0.45rem;
+		margin-top: 0;
 	}
 
 	input[type='checkbox'] {
-		accent-color: #ef4444;
+		accent-color: var(--accent);
+		width: 13px;
+		height: 13px;
 	}
 
 	.region-preview {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.5rem;
-		padding: 0.75rem;
-		background: #222;
-		border: 1px solid #333;
-		border-radius: 6px;
+		gap: 0.4rem;
+		padding: 0.55rem;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 2px;
 	}
 
 	.region-preview svg {
@@ -711,14 +919,15 @@
 	}
 
 	.region-preview .screen-rect {
-		fill: #1a1a1a;
-		stroke: #444;
+		fill: var(--surface-2);
+		stroke: var(--border-strong);
 		stroke-width: 1;
 	}
 
 	.region-preview .region-rect {
-		fill: rgba(239, 68, 68, 0.25);
-		stroke: #ef4444;
+		fill: var(--text);
+		fill-opacity: 0.15;
+		stroke: var(--text);
 		stroke-width: 1;
 		cursor: grab;
 		touch-action: none;
@@ -730,34 +939,14 @@
 
 	.region-actions {
 		display: flex;
-		gap: 0.5rem;
+		gap: 0.4rem;
 		justify-content: center;
 		flex-wrap: wrap;
 	}
 
 	.region-caption {
-		font-size: 0.7rem;
-		color: #888;
+		font-size: 0.68rem;
+		color: var(--text-dim);
 		text-align: center;
-	}
-
-	.preview-refresh {
-		background: #2a2a2a;
-		border: 1px solid #3a3a3a;
-		border-radius: 6px;
-		padding: 0.35rem 0.8rem;
-		color: #ffffff;
-		cursor: pointer;
-		font-size: 0.7rem;
-		font-family: 'JetBrains Mono', monospace;
-	}
-
-	.preview-refresh:hover:not(:disabled) {
-		background: #333;
-	}
-
-	.preview-refresh:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
 	}
 </style>
