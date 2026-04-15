@@ -10,8 +10,16 @@
     "dialog:default",
     "dialog:allow-open",
     "shell:default",
-    "shell:allow-open",
     "shell:allow-execute",
+    "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$VIDEOS/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOCUMENT/**" }]
+    },
+    {
+      "identifier": "opener:allow-reveal-item-in-dir",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$VIDEOS/**" }, { "path": "$DESKTOP/**" }, { "path": "$DOCUMENT/**" }]
+    },
     "core:window:allow-minimize",
     "core:window:allow-unminimize",
     "core:window:allow-set-focus",

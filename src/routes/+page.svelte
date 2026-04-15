@@ -2,7 +2,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window';
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { open as openInShell } from '@tauri-apps/plugin-shell';
+	import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 	import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 	import { onMount, onDestroy } from 'svelte';
 
@@ -239,7 +239,7 @@
 
 	async function openVideo() {
 		try {
-			await openInShell(outputPath);
+			await openPath(outputPath);
 		} catch (e) {
 			alert(`Failed to open video: ${e}`);
 		}
@@ -301,9 +301,8 @@
 	});
 
 	async function showInFolder() {
-		const parent = outputPath.replace(/[/\\][^/\\]*$/, '');
 		try {
-			await openInShell(parent);
+			await revealItemInDir(outputPath);
 		} catch (e) {
 			alert(`Failed to open folder: ${e}`);
 		}
