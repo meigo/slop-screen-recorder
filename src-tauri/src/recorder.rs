@@ -615,6 +615,50 @@ pub fn get_default_output_dir() -> String {
         .to_string()
 }
 
+#[tauri::command]
+pub fn convert_to_gif(
+    state: State<RecorderState>,
+    input_path: String,
+) -> Result<String, String> {
+    let input_pb = std::path::PathBuf::from(&input_path);
+
+    if !input_pb.exists() {
+        return Err(format!("Input file does not exist: {}", input_path));
+    }
+    if input_pb.extension().and_then(|s| s.to_str()) != Some("mp4") {
+        return Err("Input must be an .mp4 file".to_string());
+    }
+
+    let parent = input_pb
+        .parent()
+        .ok_or_else(|| "Input has no parent directory".to_string())?;
+    let stem = input_pb
+        .file_stem()
+        .ok_or_else(|| "Input has no file name".to_string())?;
+    let output_pb = parent.join(format!("{}.gif", stem.to_string_lossy()));
+    let output_path = output_pb.to_string_lossy().to_string();
+
+    let ffmpeg = find_ffmpeg(&state);
+    let args = build_gif_args(&input_path, &output_path);
+
+    log::info!("Converting to GIF with args: {:?}", args);
+
+    let output = ffmpeg_command(&ffmpeg)
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffmpeg failed: {}", stderr.trim()));
+    }
+
+    Ok(output_path)
+}
+
 // Trait extension for wait_timeout on Child
 trait ChildExt {
     fn wait_timeout(&mut self, dur: std::time::Duration) -> std::io::Result<Option<std::process::ExitStatus>>;

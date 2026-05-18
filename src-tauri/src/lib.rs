@@ -33,6 +33,7 @@ pub fn run() {
             recorder::stop_recording,
             recorder::is_recording,
             recorder::get_default_output_dir,
+            recorder::convert_to_gif,
             overlay::show_region_overlay,
             overlay::hide_region_overlay,
         ])
