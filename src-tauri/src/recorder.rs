@@ -45,6 +45,16 @@ pub struct RecordingConfig {
     pub region: Option<Region>,
 }
 
+/// Tail ffmpeg's stderr to the last `max_lines` non-empty lines.
+/// ffmpeg's verbose banner is at the start; the actual error is at the end,
+/// so the tail is what's worth surfacing to the user.
+fn tail_stderr(stderr: &str, max_lines: usize) -> String {
+    let cleaned = stderr.replace('\r', "\n");
+    let lines: Vec<&str> = cleaned.lines().filter(|l| !l.trim().is_empty()).collect();
+    let start = lines.len().saturating_sub(max_lines);
+    lines[start..].join("\n")
+}
+
 /// Create a Command that won't spawn a visible console window on Windows.
 fn ffmpeg_command(path: &PathBuf) -> Command {
     #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
@@ -578,7 +588,16 @@ pub fn stop_recording(state: State<RecorderState>) -> Result<String, String> {
 
             // Wait for ffmpeg to finish writing the file
             match child.wait_timeout(std::time::Duration::from_secs(10)) {
-                Ok(Some(_status)) => {}
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        let mut stderr = String::new();
+                        if let Some(mut s) = child.stderr.take() {
+                            use std::io::Read;
+                            let _ = s.read_to_string(&mut stderr);
+                        }
+                        return Err(format!("ffmpeg failed: {}", tail_stderr(&stderr, 6)));
+                    }
+                }
                 Ok(None) => {
                     // Timeout — force kill
                     let _ = child.kill();
@@ -653,7 +672,7 @@ pub fn convert_to_gif(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("ffmpeg failed: {}", stderr.trim()));
+        return Err(format!("ffmpeg failed: {}", tail_stderr(&stderr, 6)));
     }
 
     Ok(output_path)
@@ -738,5 +757,36 @@ mod tests {
         assert!(args.iter().any(|a| a == "-y"));
         let loop_pos = args.iter().position(|a| a == "-loop").expect("missing -loop");
         assert_eq!(args[loop_pos + 1], "0");
+    }
+
+    #[test]
+    fn tail_stderr_returns_last_n_non_empty_lines() {
+        let input = "ffmpeg version 7.1.1\n  built with...\n  configuration: ...\n\n\
+                     [gdigrab @ 0x1] capturing\n\
+                     [out#0/mp4 @ 0x2] Error opening output: No such file or directory\n\
+                     Error opening output file\n\
+                     Error opening output files: No such file or directory\n";
+        let tail = tail_stderr(input, 3);
+        let lines: Vec<&str> = tail.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert!(tail.contains("Error opening output files"));
+        assert!(!tail.contains("ffmpeg version"));
+    }
+
+    #[test]
+    fn tail_stderr_treats_carriage_returns_as_newlines() {
+        // ffmpeg's progress lines overwrite with \r; treat each as a separate line
+        // so they don't crowd out the final error.
+        let input = "frame=1 fps=0\rframe=2 fps=30\rframe=3 fps=30\rError: something\n";
+        let tail = tail_stderr(input, 2);
+        assert!(tail.contains("Error: something"));
+        assert!(!tail.contains("frame=1"));
+    }
+
+    #[test]
+    fn tail_stderr_handles_input_shorter_than_max() {
+        let input = "only line\n";
+        let tail = tail_stderr(input, 6);
+        assert_eq!(tail, "only line");
     }
 }

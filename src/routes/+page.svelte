@@ -248,16 +248,20 @@
 
 	async function stopRecording() {
 		try {
-			const path = await invoke<string>('stop_recording');
+			outputPath = await invoke<string>('stop_recording');
+		} catch (e) {
+			alert(`Failed to stop recording: ${e}`);
+		} finally {
 			recording = false;
 			if (timer) {
 				clearInterval(timer);
 				timer = null;
 			}
-			outputPath = path;
-			await getCurrentWindow().unminimize();
-		} catch (e) {
-			alert(`Failed to stop recording: ${e}`);
+			try {
+				await getCurrentWindow().unminimize();
+			} catch {
+				// ignore
+			}
 		}
 	}
 
