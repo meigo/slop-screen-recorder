@@ -18,6 +18,7 @@
 		Crosshair,
 		RefreshCw,
 		ChevronRight,
+		FileImage,
 	} from '@lucide/svelte';
 
 	interface Source {
@@ -69,6 +70,8 @@
 	let regionY = $state(0);
 	let screenSize = $state<{ w: number; h: number } | null>(null);
 	let overlayVisible = $state(false);
+	let gifPath = $state('');
+	let convertingGif = $state(false);
 
 	const selectedSourceType = $derived(
 		sources.find((s) => s.id === selectedSource)?.source_type ?? 'screen',
@@ -207,6 +210,8 @@
 	}
 
 	async function startRecording() {
+		gifPath = '';
+		convertingGif = false;
 		const config: RecordingConfig = {
 			source_id: selectedSource,
 			output_dir: outputDir,
@@ -270,11 +275,11 @@
 		if (selected) outputDir = selected as string;
 	}
 
-	async function openVideo() {
+	async function openFile(path: string) {
 		try {
-			await openPath(outputPath);
+			await openPath(path);
 		} catch (e) {
-			alert(`Failed to open video: ${e}`);
+			alert(`Failed to open: ${e}`);
 		}
 	}
 
@@ -372,11 +377,23 @@
 		}
 	});
 
-	async function showInFolder() {
+	async function revealFile(path: string) {
 		try {
-			await revealItemInDir(outputPath);
+			await revealItemInDir(path);
 		} catch (e) {
 			alert(`Failed to open folder: ${e}`);
+		}
+	}
+
+	async function convertToGif() {
+		if (!outputPath || convertingGif) return;
+		convertingGif = true;
+		try {
+			gifPath = await invoke<string>('convert_to_gif', { inputPath: outputPath });
+		} catch (e) {
+			alert(`Failed to convert to GIF: ${e}`);
+		} finally {
+			convertingGif = false;
 		}
 	}
 </script>
