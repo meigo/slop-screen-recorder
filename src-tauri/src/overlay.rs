@@ -3,7 +3,7 @@ use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, Webv
 pub const OVERLAY_LABEL: &str = "region-overlay";
 
 #[tauri::command]
-pub fn show_region_overlay(
+pub async fn show_region_overlay(
     app: AppHandle,
     x: i32,
     y: i32,
@@ -20,6 +20,7 @@ pub fn show_region_overlay(
         return Ok(());
     }
 
+    log::info!("Creating overlay window at ({}, {}) size {}x{}", x, y, w, h);
     let window = WebviewWindowBuilder::new(&app, OVERLAY_LABEL, WebviewUrl::App("overlay".into()))
         .title("Region Overlay")
         .decorations(false)
