@@ -14,12 +14,12 @@
 
 ## File Structure
 
-| File | Change | Responsibility |
-| ---- | ------ | -------------- |
-| `src-tauri/src/recorder.rs` | Modify | Add pure `build_gif_args` helper + `#[tauri::command] convert_to_gif`. Add `#[cfg(test)] mod tests` block. |
-| `src-tauri/src/lib.rs` | Modify | Register `recorder::convert_to_gif` in `invoke_handler!`. |
-| `src/routes/+page.svelte` | Modify | New `gifPath` / `convertingGif` state, `convertToGif` handler, GIF button, second info row, spin animation. Small refactor: `openVideo`/`showInFolder` become path-parameterised `openFile`/`revealFile`. |
-| `README.md` | Modify | Add GIF conversion bullet to features. |
+| File                        | Change | Responsibility                                                                                                                                                                                            |
+| --------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src-tauri/src/recorder.rs` | Modify | Add pure `build_gif_args` helper + `#[tauri::command] convert_to_gif`. Add `#[cfg(test)] mod tests` block.                                                                                                |
+| `src-tauri/src/lib.rs`      | Modify | Register `recorder::convert_to_gif` in `invoke_handler!`.                                                                                                                                                 |
+| `src/routes/+page.svelte`   | Modify | New `gifPath` / `convertingGif` state, `convertToGif` handler, GIF button, second info row, spin animation. Small refactor: `openVideo`/`showInFolder` become path-parameterised `openFile`/`revealFile`. |
+| `README.md`                 | Modify | Add GIF conversion bullet to features.                                                                                                                                                                    |
 
 Everything stays inside existing files. No new modules.
 
@@ -30,6 +30,7 @@ Everything stays inside existing files. No new modules.
 Adds the argv-builder function and its test. Pure function, no I/O. This is the only piece of the backend that's worth unit-testing.
 
 **Files:**
+
 - Modify: `src-tauri/src/recorder.rs` (append at end of file, before any test module)
 - Test: `src-tauri/src/recorder.rs` (new `#[cfg(test)] mod tests` block at end)
 
@@ -134,6 +135,7 @@ git commit -m "Add build_gif_args helper for MP4 → GIF conversion"
 Wires the helper into a registered Tauri command. No new unit test — this function is mostly I/O against a real ffmpeg binary; we'll verify it manually at the end.
 
 **Files:**
+
 - Modify: `src-tauri/src/recorder.rs`
 - Modify: `src-tauri/src/lib.rs`
 
@@ -244,6 +246,7 @@ git commit -m "Add convert_to_gif Tauri command"
 Adds the reactive state and conversion handler, and refactors the two file-action helpers to take a path argument so the same code serves both MP4 and GIF.
 
 **Files:**
+
 - Modify: `src/routes/+page.svelte`
 
 - [ ] **Step 1: Add the FileImage icon to the import**
@@ -252,18 +255,18 @@ In `src/routes/+page.svelte` lines 8-21, the icon import block currently ends wi
 
 ```ts
 import {
-    MonitorDot,
-    Sun,
-    Moon,
-    Folder,
-    FolderOpen,
-    Play,
-    Square,
-    Circle,
-    Maximize2,
-    Crosshair,
-    RefreshCw,
-    ChevronRight,
+	MonitorDot,
+	Sun,
+	Moon,
+	Folder,
+	FolderOpen,
+	Play,
+	Square,
+	Circle,
+	Maximize2,
+	Crosshair,
+	RefreshCw,
+	ChevronRight,
 } from '@lucide/svelte';
 ```
 
@@ -271,19 +274,19 @@ with the same block plus `FileImage`:
 
 ```ts
 import {
-    MonitorDot,
-    Sun,
-    Moon,
-    Folder,
-    FolderOpen,
-    Play,
-    Square,
-    Circle,
-    Maximize2,
-    Crosshair,
-    RefreshCw,
-    ChevronRight,
-    FileImage,
+	MonitorDot,
+	Sun,
+	Moon,
+	Folder,
+	FolderOpen,
+	Play,
+	Square,
+	Circle,
+	Maximize2,
+	Crosshair,
+	RefreshCw,
+	ChevronRight,
+	FileImage,
 } from '@lucide/svelte';
 ```
 
@@ -311,19 +314,19 @@ Find `openVideo` (around line 273-279) and `showInFolder` (around line 375-381).
 
 ```ts
 async function openFile(path: string) {
-    try {
-        await openPath(path);
-    } catch (e) {
-        alert(`Failed to open: ${e}`);
-    }
+	try {
+		await openPath(path);
+	} catch (e) {
+		alert(`Failed to open: ${e}`);
+	}
 }
 
 async function revealFile(path: string) {
-    try {
-        await revealItemInDir(path);
-    } catch (e) {
-        alert(`Failed to open folder: ${e}`);
-    }
+	try {
+		await revealItemInDir(path);
+	} catch (e) {
+		alert(`Failed to open folder: ${e}`);
+	}
 }
 ```
 
@@ -335,15 +338,15 @@ Anywhere convenient in the `<script>` block (e.g., right after the new `revealFi
 
 ```ts
 async function convertToGif() {
-    if (!outputPath || convertingGif) return;
-    convertingGif = true;
-    try {
-        gifPath = await invoke<string>('convert_to_gif', { inputPath: outputPath });
-    } catch (e) {
-        alert(`Failed to convert to GIF: ${e}`);
-    } finally {
-        convertingGif = false;
-    }
+	if (!outputPath || convertingGif) return;
+	convertingGif = true;
+	try {
+		gifPath = await invoke<string>('convert_to_gif', { inputPath: outputPath });
+	} catch (e) {
+		alert(`Failed to convert to GIF: ${e}`);
+	} finally {
+		convertingGif = false;
+	}
 }
 ```
 
@@ -369,6 +372,7 @@ git commit -m "Add GIF conversion state and handler in record UI"
 Updates the template to wire up the new button and the GIF info row, and adds the spinner CSS. Also swaps the existing `openVideo`/`showInFolder` callsites over to the new helpers.
 
 **Files:**
+
 - Modify: `src/routes/+page.svelte`
 
 - [ ] **Step 1: Replace the record-bar output block in the template**
@@ -377,17 +381,17 @@ Find the existing block (lines 565-578 in the original file):
 
 ```svelte
 {#if outputPath && !recording}
-    <div class="output-info">
-        <code title={outputPath}>{outputPath.split(/[/\\]/).pop()}</code>
-        <div class="output-actions">
-            <button class="ghost" onclick={openVideo} aria-label="Open video">
-                <Play size={13} strokeWidth={1.5} />
-            </button>
-            <button class="ghost" onclick={showInFolder} aria-label="Show in folder">
-                <FolderOpen size={13} strokeWidth={1.5} />
-            </button>
-        </div>
-    </div>
+	<div class="output-info">
+		<code title={outputPath}>{outputPath.split(/[/\\]/).pop()}</code>
+		<div class="output-actions">
+			<button class="ghost" onclick={openVideo} aria-label="Open video">
+				<Play size={13} strokeWidth={1.5} />
+			</button>
+			<button class="ghost" onclick={showInFolder} aria-label="Show in folder">
+				<FolderOpen size={13} strokeWidth={1.5} />
+			</button>
+		</div>
+	</div>
 {/if}
 ```
 
@@ -395,62 +399,46 @@ Replace it with:
 
 ```svelte
 {#if outputPath && !recording}
-    <div class="output-info">
-        <code title={outputPath}>{outputPath.split(/[/\\]/).pop()}</code>
-        <div class="output-actions">
-            <button
-                class="ghost"
-                onclick={() => openFile(outputPath)}
-                aria-label="Open video"
-            >
-                <Play size={13} strokeWidth={1.5} />
-            </button>
-            <button
-                class="ghost"
-                onclick={() => revealFile(outputPath)}
-                aria-label="Show in folder"
-            >
-                <FolderOpen size={13} strokeWidth={1.5} />
-            </button>
-            {#if !gifPath}
-                <button
-                    class="ghost"
-                    onclick={convertToGif}
-                    disabled={convertingGif}
-                    aria-label="Convert to GIF"
-                    title="Convert to GIF"
-                >
-                    {#if convertingGif}
-                        <span class="spin"><RefreshCw size={13} strokeWidth={1.5} /></span>
-                    {:else}
-                        <FileImage size={13} strokeWidth={1.5} />
-                    {/if}
-                </button>
-            {/if}
-        </div>
-    </div>
+	<div class="output-info">
+		<code title={outputPath}>{outputPath.split(/[/\\]/).pop()}</code>
+		<div class="output-actions">
+			<button class="ghost" onclick={() => openFile(outputPath)} aria-label="Open video">
+				<Play size={13} strokeWidth={1.5} />
+			</button>
+			<button class="ghost" onclick={() => revealFile(outputPath)} aria-label="Show in folder">
+				<FolderOpen size={13} strokeWidth={1.5} />
+			</button>
+			{#if !gifPath}
+				<button
+					class="ghost"
+					onclick={convertToGif}
+					disabled={convertingGif}
+					aria-label="Convert to GIF"
+					title="Convert to GIF"
+				>
+					{#if convertingGif}
+						<span class="spin"><RefreshCw size={13} strokeWidth={1.5} /></span>
+					{:else}
+						<FileImage size={13} strokeWidth={1.5} />
+					{/if}
+				</button>
+			{/if}
+		</div>
+	</div>
 
-    {#if gifPath}
-        <div class="output-info">
-            <code title={gifPath}>{gifPath.split(/[/\\]/).pop()}</code>
-            <div class="output-actions">
-                <button
-                    class="ghost"
-                    onclick={() => openFile(gifPath)}
-                    aria-label="Open GIF"
-                >
-                    <Play size={13} strokeWidth={1.5} />
-                </button>
-                <button
-                    class="ghost"
-                    onclick={() => revealFile(gifPath)}
-                    aria-label="Show GIF in folder"
-                >
-                    <FolderOpen size={13} strokeWidth={1.5} />
-                </button>
-            </div>
-        </div>
-    {/if}
+	{#if gifPath}
+		<div class="output-info">
+			<code title={gifPath}>{gifPath.split(/[/\\]/).pop()}</code>
+			<div class="output-actions">
+				<button class="ghost" onclick={() => openFile(gifPath)} aria-label="Open GIF">
+					<Play size={13} strokeWidth={1.5} />
+				</button>
+				<button class="ghost" onclick={() => revealFile(gifPath)} aria-label="Show GIF in folder">
+					<FolderOpen size={13} strokeWidth={1.5} />
+				</button>
+			</div>
+		</div>
+	{/if}
 {/if}
 ```
 
@@ -460,13 +448,13 @@ Find the existing `@keyframes pulse` block (around lines 877-885 in the original
 
 ```css
 @keyframes pulse {
-    0%,
-    100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.3;
-    }
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.3;
+	}
 }
 ```
 
@@ -474,14 +462,14 @@ Immediately after it, append:
 
 ```css
 .spin {
-    display: inline-flex;
-    animation: spin 1s linear infinite;
+	display: inline-flex;
+	animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+	to {
+		transform: rotate(360deg);
+	}
 }
 ```
 
@@ -525,6 +513,7 @@ git commit -m "Add GIF convert button and result row to record UI"
 Updates the features list per `CLAUDE.md`'s workflow rule, then runs the full pipeline once more as a final gate.
 
 **Files:**
+
 - Modify: `README.md`
 
 - [ ] **Step 1: Add the GIF feature to the README**
@@ -562,30 +551,31 @@ git commit -m "Document GIF export in README features list"
 
 **Spec coverage:**
 
-| Spec section | Implementing task(s) |
-| ------------ | -------------------- |
-| Convert button per-recording, no batch UI | Task 4 (only renders when `outputPath` set) |
-| GIF row replaces button after success | Task 4 (`{#if !gifPath}` / `{#if gifPath}`) |
-| Reset GIF state on new recording | Task 3, Step 3 |
-| One ffmpeg invocation with smart filter | Task 1 + Task 2 |
-| `fps=10`, max 720px width, lanczos | Task 1 filter string |
-| `mpdecimate` + `paletteuse=diff_mode=rectangle` | Task 1 filter string |
-| Validates input exists + .mp4 extension | Task 2, Step 1 |
-| Overwrite existing output (`-y`) | Task 1 filter argv |
-| Synchronous spawn via `.output()` | Task 2, Step 1 |
-| Use `ffmpeg_command()` + `find_ffmpeg()` helpers | Task 2, Step 1 |
-| Register command in `lib.rs` | Task 2, Step 2 |
-| Spinner during conversion | Task 4, Steps 1 + 2 |
-| Errors surfaced via `alert()` | Task 3, Step 5 |
-| README updated (`CLAUDE.md` workflow rule) | Task 5 |
-| `npm test` passes before completion | Task 4 Step 3 + Task 5 Step 2 |
-| No progress / cancel (deferred) | (Non-goal — not in any task) |
+| Spec section                                     | Implementing task(s)                        |
+| ------------------------------------------------ | ------------------------------------------- |
+| Convert button per-recording, no batch UI        | Task 4 (only renders when `outputPath` set) |
+| GIF row replaces button after success            | Task 4 (`{#if !gifPath}` / `{#if gifPath}`) |
+| Reset GIF state on new recording                 | Task 3, Step 3                              |
+| One ffmpeg invocation with smart filter          | Task 1 + Task 2                             |
+| `fps=10`, max 720px width, lanczos               | Task 1 filter string                        |
+| `mpdecimate` + `paletteuse=diff_mode=rectangle`  | Task 1 filter string                        |
+| Validates input exists + .mp4 extension          | Task 2, Step 1                              |
+| Overwrite existing output (`-y`)                 | Task 1 filter argv                          |
+| Synchronous spawn via `.output()`                | Task 2, Step 1                              |
+| Use `ffmpeg_command()` + `find_ffmpeg()` helpers | Task 2, Step 1                              |
+| Register command in `lib.rs`                     | Task 2, Step 2                              |
+| Spinner during conversion                        | Task 4, Steps 1 + 2                         |
+| Errors surfaced via `alert()`                    | Task 3, Step 5                              |
+| README updated (`CLAUDE.md` workflow rule)       | Task 5                                      |
+| `npm test` passes before completion              | Task 4 Step 3 + Task 5 Step 2               |
+| No progress / cancel (deferred)                  | (Non-goal — not in any task)                |
 
 All spec items have a home.
 
 **Placeholder scan:** No "TBD", "TODO", "implement later", "add appropriate error handling" anywhere. Every code-changing step shows the actual code.
 
 **Type / name consistency:**
+
 - Tauri command name: `convert_to_gif` (snake_case in Rust), invoked as `'convert_to_gif'` with `{ inputPath: ... }` (Tauri 2 auto-converts) — used consistently in Task 2 Step 1, Task 2 Step 2, Task 3 Step 5.
 - Helper: `build_gif_args` — defined Task 1 Step 3, asserted Task 1 Step 1, called Task 2 Step 1.
 - Frontend state: `gifPath`, `convertingGif` — declared Task 3 Step 2, reset Task 3 Step 3, used Task 3 Step 5 and Task 4 Step 1.

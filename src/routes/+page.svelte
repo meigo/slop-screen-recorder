@@ -584,14 +584,51 @@
 				<div class="output-info">
 					<code title={outputPath}>{outputPath.split(/[/\\]/).pop()}</code>
 					<div class="output-actions">
-						<button class="ghost" onclick={openVideo} aria-label="Open video">
+						<button class="ghost" onclick={() => openFile(outputPath)} aria-label="Open video">
 							<Play size={13} strokeWidth={1.5} />
 						</button>
-						<button class="ghost" onclick={showInFolder} aria-label="Show in folder">
+						<button
+							class="ghost"
+							onclick={() => revealFile(outputPath)}
+							aria-label="Show in folder"
+						>
 							<FolderOpen size={13} strokeWidth={1.5} />
 						</button>
+						{#if !gifPath}
+							<button
+								class="ghost"
+								onclick={convertToGif}
+								disabled={convertingGif}
+								aria-label="Convert to GIF"
+								title="Convert to GIF"
+							>
+								{#if convertingGif}
+									<span class="spin"><RefreshCw size={13} strokeWidth={1.5} /></span>
+								{:else}
+									<FileImage size={13} strokeWidth={1.5} />
+								{/if}
+							</button>
+						{/if}
 					</div>
 				</div>
+
+				{#if gifPath}
+					<div class="output-info">
+						<code title={gifPath}>{gifPath.split(/[/\\]/).pop()}</code>
+						<div class="output-actions">
+							<button class="ghost" onclick={() => openFile(gifPath)} aria-label="Open GIF">
+								<Play size={13} strokeWidth={1.5} />
+							</button>
+							<button
+								class="ghost"
+								onclick={() => revealFile(gifPath)}
+								aria-label="Show GIF in folder"
+							>
+								<FolderOpen size={13} strokeWidth={1.5} />
+							</button>
+						</div>
+					</div>
+				{/if}
 			{/if}
 
 			<div class="record-section">
@@ -898,6 +935,17 @@
 		}
 		50% {
 			opacity: 0.3;
+		}
+	}
+
+	.spin {
+		display: inline-flex;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
 		}
 	}
 

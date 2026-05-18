@@ -85,14 +85,14 @@ New handler:
 
 ```ts
 async function convertToGif() {
-  convertingGif = true;
-  try {
-    gifPath = await invoke<string>('convert_to_gif', { inputPath: outputPath });
-  } catch (e) {
-    alert(`Failed to convert to GIF: ${e}`);
-  } finally {
-    convertingGif = false;
-  }
+	convertingGif = true;
+	try {
+		gifPath = await invoke<string>('convert_to_gif', { inputPath: outputPath });
+	} catch (e) {
+		alert(`Failed to convert to GIF: ${e}`);
+	} finally {
+		convertingGif = false;
+	}
 }
 ```
 
