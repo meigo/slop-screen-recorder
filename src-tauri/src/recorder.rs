@@ -685,6 +685,7 @@ mod tests {
             .expect("missing -filter_complex");
         let filter = &args[f_pos + 1];
         assert!(filter.contains("fps=10"));
+        assert!(filter.contains("scale="));
         assert!(filter.contains("mpdecimate"));
         assert!(filter.contains("palettegen=stats_mode=diff"));
         assert!(filter.contains("paletteuse=diff_mode=rectangle"));
