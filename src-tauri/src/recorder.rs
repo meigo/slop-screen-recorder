@@ -668,6 +668,9 @@ pub fn get_default_output_dir() -> String {
         .to_string()
 }
 
+/// Convert an MP4 recording to a GIF. Blocks until ffmpeg finishes;
+/// returns the output GIF path on success, or a tailed ffmpeg stderr
+/// fragment on failure.
 #[tauri::command]
 pub fn convert_to_gif(
     state: State<RecorderState>,
