@@ -636,3 +636,62 @@ impl ChildExt for Child {
         }
     }
 }
+
+/// Build the ffmpeg argv for converting an MP4 to a GIF.
+///
+/// The filter graph:
+///   - caps the rate at 10fps (longest delays come from `mpdecimate` skipping
+///     near-identical frames, so static stretches collapse into single long-
+///     delay GIF frames),
+///   - downscales width to at most 720px (lanczos), height auto + even,
+///   - generates a per-clip palette weighted toward changing pixels, and
+///   - applies that palette with `diff_mode=rectangle` so each GIF frame only
+///     re-encodes the bounding box of changed pixels.
+fn build_gif_args(input: &str, output: &str) -> Vec<String> {
+    let filter = "fps=10,scale='min(720,iw)':-2:flags=lanczos,mpdecimate,split[a][b];\
+                  [a]palettegen=stats_mode=diff[p];\
+                  [b][p]paletteuse=diff_mode=rectangle";
+    vec![
+        "-y".to_string(),
+        "-i".to_string(),
+        input.to_string(),
+        "-filter_complex".to_string(),
+        filter.to_string(),
+        "-loop".to_string(),
+        "0".to_string(),
+        output.to_string(),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_gif_args_contains_paths_and_filter() {
+        let args = build_gif_args("/tmp/in.mp4", "/tmp/out.gif");
+
+        // Output is the last positional argument.
+        assert_eq!(args.last().map(String::as_str), Some("/tmp/out.gif"));
+
+        // Input follows `-i`.
+        let i_pos = args.iter().position(|a| a == "-i").expect("missing -i");
+        assert_eq!(args[i_pos + 1], "/tmp/in.mp4");
+
+        // Filter graph contains the key pieces from the design.
+        let f_pos = args
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .expect("missing -filter_complex");
+        let filter = &args[f_pos + 1];
+        assert!(filter.contains("fps=10"));
+        assert!(filter.contains("mpdecimate"));
+        assert!(filter.contains("palettegen=stats_mode=diff"));
+        assert!(filter.contains("paletteuse=diff_mode=rectangle"));
+
+        // Overwrite + loop forever.
+        assert!(args.iter().any(|a| a == "-y"));
+        let loop_pos = args.iter().position(|a| a == "-loop").expect("missing -loop");
+        assert_eq!(args[loop_pos + 1], "0");
+    }
+}
