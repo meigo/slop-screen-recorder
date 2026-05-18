@@ -187,7 +187,7 @@
 			if (event.state === 'Released') return;
 			if (recording) {
 				await stopRecording();
-			} else {
+			} else if (!convertingGif) {
 				await startRecording();
 			}
 		});
