@@ -45,6 +45,35 @@ pub struct RecordingConfig {
     pub region: Option<Region>,
 }
 
+/// Verify the recording output directory exists and is writable. Returns an
+/// actionable error if not — on Windows this is often Controlled Folder Access
+/// blocking the write, which would otherwise surface as a misleading
+/// "No such file or directory" from ffmpeg.
+fn check_output_writable(output_dir: &str) -> Result<(), String> {
+    let dir = std::path::Path::new(output_dir);
+    if !dir.is_dir() {
+        return Err(format!("Output directory does not exist: {}", output_dir));
+    }
+    let probe = dir.join(".slop_write_probe");
+    match std::fs::File::create(&probe) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            Ok(())
+        }
+        Err(e) => {
+            let extra = if cfg!(target_os = "windows") {
+                "\n\nOn Windows this is often Controlled Folder Access blocking the app. \
+                 Either pick a different output directory, or allow this app in \
+                 Windows Security \u{2192} Virus & threat protection \u{2192} \
+                 Ransomware protection \u{2192} Controlled folder access."
+            } else {
+                ""
+            };
+            Err(format!("Cannot write to {}: {}{}", output_dir, e, extra))
+        }
+    }
+}
+
 /// Tail ffmpeg's stderr to the last `max_lines` non-empty lines.
 /// ffmpeg's verbose banner is at the start; the actual error is at the end,
 /// so the tail is what's worth surfacing to the user.
@@ -411,6 +440,11 @@ pub fn start_recording(
     if process.is_some() {
         return Err("Already recording".to_string());
     }
+
+    // Pre-flight: confirm we can actually write to the output directory before
+    // spawning ffmpeg. ffmpeg's "No such file or directory" for write failures
+    // is misleading, and a failed recording wastes the user's time.
+    check_output_writable(&config.output_dir)?;
 
     // Close the layout overlay so its outline doesn't end up in the recording.
     crate::overlay::close_overlay(&app);
@@ -788,5 +822,18 @@ mod tests {
         let input = "only line\n";
         let tail = tail_stderr(input, 6);
         assert_eq!(tail, "only line");
+    }
+
+    #[test]
+    fn check_output_writable_rejects_missing_directory() {
+        let result = check_output_writable("Z:\\definitely\\does\\not\\exist\\anywhere");
+        let err = result.expect_err("expected an error for a missing directory");
+        assert!(err.contains("does not exist"), "got: {}", err);
+    }
+
+    #[test]
+    fn check_output_writable_accepts_a_writable_temp_dir() {
+        let tmp = std::env::temp_dir();
+        check_output_writable(&tmp.to_string_lossy()).expect("temp dir should be writable");
     }
 }
