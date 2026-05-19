@@ -14,8 +14,8 @@
 		"windows": [
 			{
 				"title": "Slop Screen Recorder",
-				"width": 520,
-				"height": 720,
+				"width": 460,
+				"height": 820,
 				"resizable": true,
 				"fullscreen": false
 			}

@@ -58,7 +58,9 @@
 	let selectedAudio = $state<string | null>(null);
 	let captureAudio = $state(false);
 	let outputDir = $state('');
-	let fps = $state(30);
+	let fps = $state(15);
+	let gifMaxWidth = $state(720);
+	let recordedFps = $state<number | null>(null);
 	let minimizeOnRecord = $state(false);
 	let recording = $state(false);
 	let outputPath = $state('');
@@ -212,6 +214,7 @@
 	async function startRecording() {
 		gifPath = '';
 		convertingGif = false;
+		recordedFps = fps;
 		const config: RecordingConfig = {
 			source_id: selectedSource,
 			output_dir: outputDir,
@@ -391,14 +394,32 @@
 
 	async function convertToGif() {
 		if (!outputPath || convertingGif) return;
+		const maxFps = recordedFps !== null ? Math.min(10, recordedFps) : 10;
 		convertingGif = true;
 		try {
-			gifPath = await invoke<string>('convert_to_gif', { inputPath: outputPath });
+			gifPath = await invoke<string>('convert_to_gif', {
+				inputPath: outputPath,
+				maxWidth: gifMaxWidth,
+				maxFps,
+			});
 		} catch (e) {
 			alert(`Failed to convert to GIF: ${e}`);
 		} finally {
 			convertingGif = false;
 		}
+	}
+
+	async function pickAndConvert() {
+		if (convertingGif || recording) return;
+		const selected = await open({
+			multiple: false,
+			filters: [{ name: 'Video', extensions: ['mp4'] }],
+		});
+		if (!selected) return;
+		outputPath = selected as string;
+		gifPath = '';
+		recordedFps = null;
+		await convertToGif();
 	}
 </script>
 
@@ -534,11 +555,24 @@
 						<div class="field">
 							<label for="fps">FPS</label>
 							<select id="fps" bind:value={fps} disabled={recording}>
+								<option value={5}>5</option>
+								<option value={10}>10</option>
 								<option value={15}>15</option>
 								<option value={24}>24</option>
 								<option value={25}>25</option>
 								<option value={30}>30</option>
 								<option value={60}>60</option>
+							</select>
+						</div>
+
+						<div class="field">
+							<label for="gif-width">GIF max width</label>
+							<select id="gif-width" bind:value={gifMaxWidth} disabled={recording}>
+								<option value={480}>480px</option>
+								<option value={720}>720px</option>
+								<option value={1080}>1080px</option>
+								<option value={1440}>1440px</option>
+								<option value={0}>Original</option>
 							</select>
 						</div>
 
@@ -645,9 +679,19 @@
 						<Square size={14} strokeWidth={1.5} fill="currentColor" /> Stop
 					</button>
 				{:else}
-					<button class="btn primary" onclick={startRecording} disabled={!selectedSource}>
-						<Circle size={14} strokeWidth={1.5} /> Record
-					</button>
+					<div class="action-row">
+						<button class="btn primary" onclick={startRecording} disabled={!selectedSource}>
+							<Circle size={14} strokeWidth={1.5} /> Record
+						</button>
+						<button class="btn" onclick={pickAndConvert} disabled={convertingGif}>
+							{#if convertingGif}
+								<span class="spin"><RefreshCw size={14} strokeWidth={1.5} /></span>
+								Converting…
+							{:else}
+								<FileImage size={14} strokeWidth={1.5} /> Convert to GIF
+							{/if}
+						</button>
+					</div>
 				{/if}
 			</div>
 		</div>
@@ -1024,6 +1068,14 @@
 		align-items: center;
 		gap: 0.45rem;
 		margin-top: 0;
+	}
+
+	.action-row {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: space-between;
+		align-items: stretch;
+		width: 100%;
 	}
 
 	input[type='checkbox'] {

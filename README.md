@@ -11,8 +11,8 @@ Wraps FFmpeg with a clean native UI — select a source, hit record, get an MP4.
 - **Region capture** — record a fixed-resolution region in landscape, portrait, or square (480p up to 4K) anchored to a corner or the center of the screen
 - **Hardware-accelerated encoding** — H.264 via VideoToolbox (macOS), with fallback to libx264
 - **Audio capture** — optional microphone recording
-- **GIF export** — one-click post-recording conversion to a size-conscious GIF (skips static frames, encodes only changed regions)
-- **Configurable** — choose source, FPS (15/24/25/30/60), and output directory
+- **GIF export** — one-click post-recording conversion to a size-conscious GIF (skips static frames, encodes only changed regions); also convert any existing `.mp4` via the file picker. GIF width is configurable (480/720/1080/1440/Original) and fps is capped at min(10, recording fps)
+- **Configurable** — choose source, FPS (5/10/15/24/25/30/60, default 15), and output directory
 - **Global hotkey** — `Ctrl+Shift+R` to start/stop recording from anywhere
 - **Minimize on record** — optionally minimize the recorder window while recording
 - **Tiny footprint** — native Tauri app, no Electron/Chromium bundle

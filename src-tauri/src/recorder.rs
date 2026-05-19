@@ -675,6 +675,8 @@ pub fn get_default_output_dir() -> String {
 pub fn convert_to_gif(
     state: State<RecorderState>,
     input_path: String,
+    max_width: u32,
+    max_fps: u32,
 ) -> Result<String, String> {
     let input_pb = std::path::PathBuf::from(&input_path);
 
@@ -695,7 +697,7 @@ pub fn convert_to_gif(
     let output_path = output_pb.to_string_lossy().to_string();
 
     let ffmpeg = find_ffmpeg(&state);
-    let args = build_gif_args(&input_path, &output_path);
+    let args = build_gif_args(&input_path, &output_path, max_width, max_fps);
 
     log::info!("Converting to GIF with args: {:?}", args);
 
@@ -740,23 +742,33 @@ impl ChildExt for Child {
 /// Build the ffmpeg argv for converting an MP4 to a GIF.
 ///
 /// The filter graph:
-///   - caps the rate at 10fps (longest delays come from `mpdecimate` skipping
+///   - caps the rate at `max_fps` (longest delays come from `mpdecimate` skipping
 ///     near-identical frames, so static stretches collapse into single long-
 ///     delay GIF frames),
-///   - downscales width to at most 720px (lanczos), height auto + even,
+///   - downscales width to at most `max_width`px (lanczos) — pass `0` to keep
+///     the source size, rounded to even dimensions,
 ///   - generates a per-clip palette weighted toward changing pixels, and
 ///   - applies that palette with `diff_mode=rectangle` so each GIF frame only
 ///     re-encodes the bounding box of changed pixels.
-fn build_gif_args(input: &str, output: &str) -> Vec<String> {
-    let filter = "fps=10,scale='min(720,iw)':-2:flags=lanczos,mpdecimate,split[a][b];\
-                  [a]palettegen=stats_mode=diff[p];\
-                  [b][p]paletteuse=diff_mode=rectangle";
+fn build_gif_args(input: &str, output: &str, max_width: u32, max_fps: u32) -> Vec<String> {
+    let scale = if max_width == 0 {
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos".to_string()
+    } else {
+        format!("scale='min({},iw)':-2:flags=lanczos", max_width)
+    };
+    let filter = format!(
+        "fps={fps},{scale},mpdecimate,split[a][b];\
+         [a]palettegen=stats_mode=diff[p];\
+         [b][p]paletteuse=diff_mode=rectangle",
+        fps = max_fps,
+        scale = scale,
+    );
     vec![
         "-y".to_string(),
         "-i".to_string(),
         input.to_string(),
         "-filter_complex".to_string(),
-        filter.to_string(),
+        filter,
         "-loop".to_string(),
         "0".to_string(),
         output.to_string(),
@@ -769,7 +781,7 @@ mod tests {
 
     #[test]
     fn build_gif_args_contains_paths_and_filter() {
-        let args = build_gif_args("/tmp/in.mp4", "/tmp/out.gif");
+        let args = build_gif_args("/tmp/in.mp4", "/tmp/out.gif", 720, 10);
 
         // Output is the last positional argument.
         assert_eq!(args.last().map(String::as_str), Some("/tmp/out.gif"));
@@ -785,7 +797,7 @@ mod tests {
             .expect("missing -filter_complex");
         let filter = &args[f_pos + 1];
         assert!(filter.contains("fps=10"));
-        assert!(filter.contains("scale="));
+        assert!(filter.contains("min(720,iw)"));
         assert!(filter.contains("mpdecimate"));
         assert!(filter.contains("palettegen=stats_mode=diff"));
         assert!(filter.contains("paletteuse=diff_mode=rectangle"));
@@ -794,6 +806,25 @@ mod tests {
         assert!(args.iter().any(|a| a == "-y"));
         let loop_pos = args.iter().position(|a| a == "-loop").expect("missing -loop");
         assert_eq!(args[loop_pos + 1], "0");
+    }
+
+    #[test]
+    fn build_gif_args_honors_custom_width_and_fps() {
+        let args = build_gif_args("/tmp/in.mp4", "/tmp/out.gif", 480, 5);
+        let f_pos = args.iter().position(|a| a == "-filter_complex").unwrap();
+        let filter = &args[f_pos + 1];
+        assert!(filter.contains("fps=5"));
+        assert!(filter.contains("min(480,iw)"));
+    }
+
+    #[test]
+    fn build_gif_args_zero_width_keeps_original_size() {
+        let args = build_gif_args("/tmp/in.mp4", "/tmp/out.gif", 0, 10);
+        let f_pos = args.iter().position(|a| a == "-filter_complex").unwrap();
+        let filter = &args[f_pos + 1];
+        assert!(!filter.contains("min("));
+        assert!(filter.contains("trunc(iw/2)*2"));
+        assert!(filter.contains("trunc(ih/2)*2"));
     }
 
     #[test]
